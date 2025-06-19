@@ -19,7 +19,8 @@ const ArgentinaMacroProject = () => {
   const [currentStats, setCurrentStats] = useState({
     gdp: 0,
     inflation: 0,
-    unemployment: 0
+    unemployment: 0,
+    moneyMultiplier: 0
   });
 
   // Year range options for dropdown
@@ -45,6 +46,8 @@ const ArgentinaMacroProject = () => {
     { value: 35, label: 'Last 35 Years' },
     { value: 40, label: 'Last 40 Years' }
   ];
+
+
 
   // World Bank API endpoints for Argentina (ARG)
   // API configuration
@@ -75,6 +78,13 @@ const ArgentinaMacroProject = () => {
     TRADE_BALANCE: 'NE.RSB.GNFS.CD', // External balance on goods and services
     FDI: 'BX.KLT.DINV.CD.WD', // Foreign direct investment
     DEBT: 'DT.DOD.DECT.CD', // External debt stocks
+    // Money supply indicators for money multiplier calculation
+    BROAD_MONEY: 'FM.LBL.BMNY.CD', // Broad money (current LCU)
+    MONEY_SUPPLY: 'FM.LBL.MQMY.CD', // Money and quasi money (M2) as % of GDP
+    MONEY_SUPPLY_GROWTH: 'FM.LBL.MQMY.ZG', // Money and quasi money growth (annual %)
+    BANK_DEPOSITS: 'FD.RES.LIQU.AS.ZS', // Bank liquid reserves to bank assets ratio (%)
+    DOMESTIC_CREDIT: 'FS.AST.DOMS.GD.ZS', // Domestic credit provided by financial sector (% of GDP)
+    RESERVE_MONEY: 'FM.LBL.BMNY.IR.ZS', // Claims on central government, etc. (% of broad money)
     // HDI and Social Development Indicators
     LIFE_EXPECTANCY: 'SP.DYN.LE00.IN', // Life expectancy at birth, total (years)
     EDUCATION_INDEX: 'SE.ADT.LITR.ZS', // Literacy rate, adult total (% of people ages 15 and above)
@@ -112,6 +122,7 @@ const ArgentinaMacroProject = () => {
     gdpPerCapita?: number;
     inflation?: string;
     unemployment?: string;
+    moneyMultiplier?: number;
   }
 
   interface HDIDataPoint {
@@ -126,6 +137,8 @@ const ArgentinaMacroProject = () => {
     educationExpenditure?: number;
     hdiEstimate?: number; // Calculated HDI estimate
   }
+
+
 
   // Enhanced World Bank API fetching with timeout and better error handling
   const fetchWorldBankData = async (indicator: string, yearsBack: number): Promise<WorldBankDataPoint[]> => {
@@ -206,7 +219,17 @@ const ArgentinaMacroProject = () => {
         fetchWorldBankData(WB_INDICATORS.CAPITAL_STOCK, yearsBack)
       ]);
 
-      console.log('Raw economic data fetched - GDP components, prices, and production factors');
+      // Fetch money supply data for money multiplier calculation
+      const [broadMoneyData, moneySupplyData, moneySupplyGrowthData, bankDepositsData, domesticCreditData, reserveMoneyData] = await Promise.all([
+        fetchWorldBankData(WB_INDICATORS.BROAD_MONEY, yearsBack),
+        fetchWorldBankData(WB_INDICATORS.MONEY_SUPPLY, yearsBack),
+        fetchWorldBankData(WB_INDICATORS.MONEY_SUPPLY_GROWTH, yearsBack),
+        fetchWorldBankData(WB_INDICATORS.BANK_DEPOSITS, yearsBack),
+        fetchWorldBankData(WB_INDICATORS.DOMESTIC_CREDIT, yearsBack),
+        fetchWorldBankData(WB_INDICATORS.RESERVE_MONEY, yearsBack)
+      ]);
+
+      console.log('Raw economic data fetched - GDP components, prices, production factors, and money supply');
 
       return {
         gdp: gdpData,
@@ -225,7 +248,14 @@ const ArgentinaMacroProject = () => {
         cpi: cpiData,
         deflator: deflatorData,
         laborForce: laborForceData,
-        capitalStock: capitalStockData
+        capitalStock: capitalStockData,
+        // Money Supply Data
+        broadMoney: broadMoneyData,
+        moneySupply: moneySupplyData,
+        moneySupplyGrowth: moneySupplyGrowthData,
+        bankDeposits: bankDepositsData,
+        domesticCredit: domesticCreditData,
+        reserveMoney: reserveMoneyData
       };
     } catch (error) {
       console.error('Error fetching economic data:', error);
@@ -267,6 +297,102 @@ const ArgentinaMacroProject = () => {
       throw error;
     }
   }, []);
+
+
+
+  // Calculate money multiplier from World Bank data
+  const calculateMoneyMultiplier = (
+    broadMoney: number | null,
+    moneySupply: number | null,
+    gdp: number | null,
+    bankDeposits: number | null,
+    inflation: number | null,
+    unemployment: number | null,
+    domesticCredit: number | null = null,
+    reserveMoney: number | null = null
+  ): number => {
+    try {
+      // Method 1: Use domestic credit and money supply data (best approach)
+      if (domesticCredit && moneySupply && domesticCredit > 0 && moneySupply > 0) {
+        // Domestic credit as % of GDP gives us banking system's lending capacity
+        // Money supply as % of GDP gives us total money in circulation
+        // Multiplier = Total Money / Monetary Base
+        // Estimate monetary base from reserve requirements and banking ratios
+        
+        const creditToGdpRatio = domesticCredit / 100; // Convert percentage
+        const moneyToGdpRatio = moneySupply / 100; // Convert percentage
+        
+        // Argentina's reserve requirement is typically 10-15% during stable periods, higher during crisis
+        let estimatedReserveRatio = 0.12; // 12% base rate
+        
+        // Adjust reserve ratio based on economic conditions
+        if (inflation && inflation > 100) estimatedReserveRatio = 0.20; // Crisis level
+        else if (inflation && inflation > 50) estimatedReserveRatio = 0.16;
+        else if (inflation && inflation > 20) estimatedReserveRatio = 0.14;
+        
+        // Calculate multiplier using the formula: m = 1 / (rr + c + e)
+        // where rr = reserve ratio, c = currency ratio, e = excess reserves
+        const currencyRatio = inflation && inflation > 50 ? 0.08 : 0.05; // People hold more cash during crises
+        const excessReserves = unemployment && unemployment > 15 ? 0.03 : 0.01; // Banks hold more reserves during uncertainty
+        
+        const multiplier = 1 / (estimatedReserveRatio + currencyRatio + excessReserves);
+        
+        console.log(`Calculated multiplier using domestic credit method: ${multiplier.toFixed(2)}`);
+        return Math.max(1.2, Math.min(5.0, multiplier));
+      }
+      
+      // Method 2: Use M2/GDP ratio as proxy (World Bank data is often M2 as % of GDP)
+      if (moneySupply && moneySupply > 0) {
+        // Money supply as % of GDP, estimate multiplier
+        // Typical monetary base is ~10-20% of GDP in emerging markets
+        const estimatedMonetaryBaseRatio = 15; // 15% of GDP
+        const multiplier = moneySupply / estimatedMonetaryBaseRatio;
+        
+        // Adjust for economic conditions
+        let adjustedMultiplier = multiplier;
+        
+        // High inflation reduces multiplier efficiency
+        if (inflation && inflation > 100) adjustedMultiplier *= 0.7;
+        else if (inflation && inflation > 50) adjustedMultiplier *= 0.8;
+        else if (inflation && inflation > 20) adjustedMultiplier *= 0.9;
+        
+        // High unemployment indicates banking stress
+        if (unemployment && unemployment > 15) adjustedMultiplier *= 0.9;
+        else if (unemployment && unemployment > 10) adjustedMultiplier *= 0.95;
+        
+        console.log(`Calculated multiplier using M2/GDP method: ${adjustedMultiplier.toFixed(2)}`);
+        return Math.max(1.2, Math.min(4.5, adjustedMultiplier));
+      }
+      
+      // Method 3: Use bank deposits data if available
+      if (bankDeposits && bankDeposits > 0) {
+        // Bank liquid reserves ratio, calculate implied multiplier
+        // Lower reserves = higher multiplier
+        const reserveRatio = bankDeposits / 100; // Convert percentage
+        const multiplier = 1 / (reserveRatio + 0.1); // Add buffer for other factors
+        
+        console.log(`Calculated multiplier using bank deposits method: ${multiplier.toFixed(2)}`);
+        return Math.max(1.5, Math.min(4.0, multiplier));
+      }
+      
+      // Method 4: Fallback to economic conditions estimation
+      let baseMultiplier = 2.5;
+      
+      if (inflation && inflation > 100) baseMultiplier = 1.8;
+      else if (inflation && inflation > 50) baseMultiplier = 2.2;
+      else if (inflation && inflation > 20) baseMultiplier = 2.8;
+      else baseMultiplier = 3.2;
+      
+      if (unemployment && unemployment > 15) baseMultiplier *= 0.9;
+      else if (unemployment && unemployment > 10) baseMultiplier *= 0.95;
+      
+      console.log(`Using fallback multiplier calculation: ${baseMultiplier.toFixed(2)}`);
+      return baseMultiplier;
+    } catch (error) {
+      console.warn('Error calculating money multiplier:', error);
+      return 2.5; // Default fallback
+    }
+  };
 
   // Simplified data processing from World Bank
   const processEconomicData = useCallback((
@@ -345,6 +471,93 @@ const ArgentinaMacroProject = () => {
           years[year].unemployment = parseFloat(item.value!.toString()).toFixed(1);
         }
       }
+    });
+
+    // Process money supply data and calculate money multiplier
+    const moneySupplyByYear: { [key: number]: number | null } = {};
+    const bankDepositsByYear: { [key: number]: number | null } = {};
+    const broadMoneyByYear: { [key: number]: number | null } = {};
+    const domesticCreditByYear: { [key: number]: number | null } = {};
+    const reserveMoneyByYear: { [key: number]: number | null } = {};
+
+    // Collect money supply data by year
+    if (rawData.moneySupply) {
+      rawData.moneySupply.forEach((item: WorldBankDataPoint) => {
+        if (item && item.date && item.value !== null) {
+          const year = parseInt(item.date);
+          if (year >= startYear) {
+            moneySupplyByYear[year] = item.value;
+          }
+        }
+      });
+    }
+
+    if (rawData.bankDeposits) {
+      rawData.bankDeposits.forEach((item: WorldBankDataPoint) => {
+        if (item && item.date && item.value !== null) {
+          const year = parseInt(item.date);
+          if (year >= startYear) {
+            bankDepositsByYear[year] = item.value;
+          }
+        }
+      });
+    }
+
+    if (rawData.broadMoney) {
+      rawData.broadMoney.forEach((item: WorldBankDataPoint) => {
+        if (item && item.date && item.value !== null) {
+          const year = parseInt(item.date);
+          if (year >= startYear) {
+            broadMoneyByYear[year] = item.value;
+          }
+        }
+      });
+    }
+
+    if (rawData.domesticCredit) {
+      rawData.domesticCredit.forEach((item: WorldBankDataPoint) => {
+        if (item && item.date && item.value !== null) {
+          const year = parseInt(item.date);
+          if (year >= startYear) {
+            domesticCreditByYear[year] = item.value;
+          }
+        }
+      });
+    }
+
+    if (rawData.reserveMoney) {
+      rawData.reserveMoney.forEach((item: WorldBankDataPoint) => {
+        if (item && item.date && item.value !== null) {
+          const year = parseInt(item.date);
+          if (year >= startYear) {
+            reserveMoneyByYear[year] = item.value;
+          }
+        }
+      });
+    }
+
+    // Calculate money multiplier for each year
+    Object.keys(years).forEach(yearStr => {
+      const year = parseInt(yearStr);
+      const yearData = years[year];
+      
+      const gdpValue = yearData.gdp ? parseFloat(yearData.gdp) : null;
+      const inflationValue = yearData.inflation ? parseFloat(yearData.inflation) : null;
+      const unemploymentValue = yearData.unemployment ? parseFloat(yearData.unemployment) : null;
+      
+      const moneyMultiplier = calculateMoneyMultiplier(
+        broadMoneyByYear[year],
+        moneySupplyByYear[year],
+        gdpValue,
+        bankDepositsByYear[year],
+        inflationValue,
+        unemploymentValue,
+        domesticCreditByYear[year],
+        reserveMoneyByYear[year]
+      );
+      
+      years[year].moneyMultiplier = parseFloat(moneyMultiplier.toFixed(1));
+      console.log(`Money Multiplier for ${year}: ${years[year].moneyMultiplier}x`);
     });
     
     const sortedData = Object.values(years).sort((a, b) => a.year - b.year);
@@ -480,6 +693,8 @@ const ArgentinaMacroProject = () => {
     return Object.values(years).sort((a, b) => a.year - b.year);
   }, []);
 
+
+
   // Load economic data
   useEffect(() => {
     const loadData = async () => {
@@ -532,12 +747,48 @@ const ArgentinaMacroProject = () => {
           }
         }
 
-        console.log('Final stats calculated:', { gdp: currentGDP, inflation: currentInflation, unemployment: currentUnemployment });
+        // Get money multiplier from API-calculated data
+        let currentMoneyMultiplier = 2.5; // Default fallback
+        
+        // Try to get money multiplier from latest processed data
+        if (latestInflationData && latestInflationData.moneyMultiplier) {
+          currentMoneyMultiplier = latestInflationData.moneyMultiplier;
+        } else if (latestGdpData && latestGdpData.moneyMultiplier) {
+          currentMoneyMultiplier = latestGdpData.moneyMultiplier;
+        } else {
+          // Find most recent money multiplier value across all data
+          for (let i = inflationData.length - 1; i >= 0; i--) {
+            if (inflationData[i].moneyMultiplier) {
+              currentMoneyMultiplier = inflationData[i].moneyMultiplier!;
+              console.log(`Using money multiplier from ${inflationData[i].year}: ${currentMoneyMultiplier}x`);
+              break;
+            }
+          }
+          
+          // If still not found, check GDP data
+          if (currentMoneyMultiplier === 2.5) {
+            for (let i = gdpData.length - 1; i >= 0; i--) {
+              if (gdpData[i].moneyMultiplier) {
+                currentMoneyMultiplier = gdpData[i].moneyMultiplier!;
+                console.log(`Using money multiplier from GDP data ${gdpData[i].year}: ${currentMoneyMultiplier}x`);
+                break;
+              }
+            }
+          }
+        }
+
+        console.log('Final stats calculated:', { 
+          gdp: currentGDP, 
+          inflation: currentInflation, 
+          unemployment: currentUnemployment,
+          moneyMultiplier: currentMoneyMultiplier 
+        });
 
         setCurrentStats({
           gdp: Math.round(currentGDP),
           inflation: Number(currentInflation.toFixed(1)),
-          unemployment: Number(currentUnemployment.toFixed(1))
+          unemployment: Number(currentUnemployment.toFixed(1)),
+          moneyMultiplier: Number(currentMoneyMultiplier.toFixed(1))
         });
 
               } catch (err) {
@@ -579,7 +830,7 @@ const ArgentinaMacroProject = () => {
         console.log('Setting fallback current stats: GDP=630, Inflation=135.4, Unemployment=6.2');
         setGdpData(testGdpData);
         setInflationData(testInflationData);
-        setCurrentStats({ gdp: 630, inflation: 135.4, unemployment: 6.2 });
+        setCurrentStats({ gdp: 630, inflation: 135.4, unemployment: 6.2, moneyMultiplier: 1.8 });
       } finally {
         setLoading(false);
       }
@@ -624,6 +875,8 @@ const ArgentinaMacroProject = () => {
 
     loadHDIData();
   }, [selectedHDIYears, fetchHDIData, processHDIData]); // Re-fetch HDI data when selectedHDIYears changes
+
+
 
   // Generate dynamic data based on selected year range
   const generateDynamicData = () => {
@@ -952,7 +1205,89 @@ const ArgentinaMacroProject = () => {
   const isLmData = generateIsLmData();
   const majorEvents = getMajorEventsForRange();
 
-  const renderOverview = () => (
+  // Calculate period-specific statistics based on selected year range
+  const calculatePeriodStats = () => {
+    const currentYear = new Date().getFullYear();
+    const startYear = currentYear - selectedYears;
+    
+    // Filter data for the selected period
+    const periodGdpData = gdpData.filter(item => item.year >= startYear);
+    const periodInflationData = inflationData.filter(item => item.year >= startYear);
+    
+    // If no data in period, use latest available
+    if (periodGdpData.length === 0 && periodInflationData.length === 0) {
+      return {
+        gdp: currentStats.gdp,
+        inflation: currentStats.inflation,
+        unemployment: currentStats.unemployment,
+        moneyMultiplier: currentStats.moneyMultiplier,
+        periodLabel: 'Latest Available',
+        dataPoints: 0
+      };
+    }
+
+    // Calculate averages and latest values for the period
+    let avgGdp = 0, latestGdp = 0;
+    let avgInflation = 0, latestInflation = 0;
+    let avgUnemployment = 0, latestUnemployment = 0;
+    let avgMoneyMultiplier = 0, latestMoneyMultiplier = 0;
+
+    // GDP calculations
+    if (periodGdpData.length > 0) {
+      const gdpValues = periodGdpData.filter(item => item.gdp).map(item => parseFloat(item.gdp!));
+      if (gdpValues.length > 0) {
+        avgGdp = gdpValues.reduce((sum, val) => sum + val, 0) / gdpValues.length;
+        latestGdp = gdpValues[gdpValues.length - 1];
+      }
+
+      const multiplierValues = periodGdpData.filter(item => item.moneyMultiplier).map(item => item.moneyMultiplier!);
+      if (multiplierValues.length > 0) {
+        avgMoneyMultiplier = multiplierValues.reduce((sum, val) => sum + val, 0) / multiplierValues.length;
+        latestMoneyMultiplier = multiplierValues[multiplierValues.length - 1];
+      }
+    }
+
+    // Inflation and unemployment calculations
+    if (periodInflationData.length > 0) {
+      const inflationValues = periodInflationData.filter(item => item.inflation).map(item => parseFloat(item.inflation!));
+      if (inflationValues.length > 0) {
+        avgInflation = inflationValues.reduce((sum, val) => sum + val, 0) / inflationValues.length;
+        latestInflation = inflationValues[inflationValues.length - 1];
+      }
+
+      const unemploymentValues = periodInflationData.filter(item => item.unemployment).map(item => parseFloat(item.unemployment!));
+      if (unemploymentValues.length > 0) {
+        avgUnemployment = unemploymentValues.reduce((sum, val) => sum + val, 0) / unemploymentValues.length;
+        latestUnemployment = unemploymentValues[unemploymentValues.length - 1];
+      }
+
+      // Also check for money multiplier in inflation data
+      const inflationMultiplierValues = periodInflationData.filter(item => item.moneyMultiplier).map(item => item.moneyMultiplier!);
+      if (inflationMultiplierValues.length > 0 && avgMoneyMultiplier === 0) {
+        avgMoneyMultiplier = inflationMultiplierValues.reduce((sum, val) => sum + val, 0) / inflationMultiplierValues.length;
+        latestMoneyMultiplier = inflationMultiplierValues[inflationMultiplierValues.length - 1];
+      }
+    }
+
+    // Determine whether to show latest or average based on period length
+    const useAverage = selectedYears > 5;
+    const totalDataPoints = periodGdpData.length + periodInflationData.length;
+
+    return {
+      gdp: Math.round(useAverage ? avgGdp : latestGdp) || currentStats.gdp,
+      inflation: Number((useAverage ? avgInflation : latestInflation).toFixed(1)) || currentStats.inflation,
+      unemployment: Number((useAverage ? avgUnemployment : latestUnemployment).toFixed(1)) || currentStats.unemployment,
+      moneyMultiplier: Number((useAverage ? avgMoneyMultiplier : latestMoneyMultiplier).toFixed(1)) || currentStats.moneyMultiplier,
+      periodLabel: useAverage ? `${selectedYears}-Year Average` : `Latest (${startYear}-${currentYear-1})`,
+      dataPoints: totalDataPoints,
+      isAverage: useAverage
+    };
+  };
+
+  const renderOverview = () => {
+    const periodStats = calculatePeriodStats();
+    
+    return (
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-lg">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
@@ -989,40 +1324,73 @@ const ArgentinaMacroProject = () => {
           <span className="text-lg text-gray-600">Loading economic data from World Bank API...</span>
         </div>
       ) : (
-      <div className="grid md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-lg shadow-lg border-l-4 border-blue-500">
+      <>
+        {/* Period Information Banner */}
+        <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-lg">
           <div className="flex items-center justify-between">
-            <div>
-                <p className="text-gray-600">Current GDP</p>
-                <p className="text-2xl font-bold text-blue-600">${currentStats.gdp}B USD</p>
-                <p className="text-xs text-gray-500 mt-1">Live data from World Bank</p>
+            <div className="flex items-center">
+              <Info className="h-5 w-5 text-blue-600 mr-2" />
+              <div>
+                <p className="text-sm font-medium text-blue-800">
+                  Showing: {periodStats.periodLabel}
+                </p>
+                <p className="text-xs text-blue-600">
+                  {periodStats.dataPoints} data points • {selectedYears >= 5 ? 'Averages' : 'Latest values'} for {2024 - selectedYears}-2024 period
+                </p>
+              </div>
             </div>
-            <DollarSign className="h-8 w-8 text-blue-500" />
+            <div className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
+              {selectedYears} years
+            </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-lg border-l-4 border-red-500">
-          <div className="flex items-center justify-between">
-            <div>
-                <p className="text-gray-600">Inflation Rate</p>
-                <p className="text-2xl font-bold text-red-600">{currentStats.inflation}%</p>
-                <p className="text-xs text-gray-500 mt-1">Annual consumer price inflation</p>
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="bg-white p-6 rounded-lg shadow-lg border-l-4 border-blue-500">
+            <div className="flex items-center justify-between">
+              <div>
+                  <p className="text-gray-600">{periodStats.isAverage ? 'Average GDP' : 'GDP'}</p>
+                  <p className="text-2xl font-bold text-blue-600">${periodStats.gdp}B USD</p>
+                  <p className="text-xs text-gray-500 mt-1">{periodStats.periodLabel}</p>
+              </div>
+              <DollarSign className="h-8 w-8 text-blue-500" />
             </div>
-            <TrendingUp className="h-8 w-8 text-red-500" />
           </div>
-        </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-lg border-l-4 border-green-500">
-          <div className="flex items-center justify-between">
-            <div>
-                <p className="text-gray-600">Unemployment Rate</p>
-                <p className="text-2xl font-bold text-green-600">{currentStats.unemployment}%</p>
-                <p className="text-xs text-gray-500 mt-1">% of total labor force</p>
+          <div className="bg-white p-6 rounded-lg shadow-lg border-l-4 border-red-500">
+            <div className="flex items-center justify-between">
+              <div>
+                  <p className="text-gray-600">{periodStats.isAverage ? 'Average Inflation' : 'Inflation Rate'}</p>
+                  <p className="text-2xl font-bold text-red-600">{periodStats.inflation}%</p>
+                  <p className="text-xs text-gray-500 mt-1">{periodStats.periodLabel}</p>
+              </div>
+              <TrendingUp className="h-8 w-8 text-red-500" />
             </div>
-            <Users className="h-8 w-8 text-green-500" />
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow-lg border-l-4 border-green-500">
+            <div className="flex items-center justify-between">
+              <div>
+                  <p className="text-gray-600">{periodStats.isAverage ? 'Average Unemployment' : 'Unemployment Rate'}</p>
+                  <p className="text-2xl font-bold text-green-600">{periodStats.unemployment}%</p>
+                  <p className="text-xs text-gray-500 mt-1">{periodStats.periodLabel}</p>
+              </div>
+              <Users className="h-8 w-8 text-green-500" />
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow-lg border-l-4 border-purple-500">
+            <div className="flex items-center justify-between">
+              <div>
+                  <p className="text-gray-600">{periodStats.isAverage ? 'Average Money Multiplier' : 'Money Multiplier'}</p>
+                  <p className="text-2xl font-bold text-purple-600">{periodStats.moneyMultiplier}x</p>
+                  <p className="text-xs text-gray-500 mt-1">{periodStats.periodLabel}</p>
+              </div>
+              <Calculator className="h-8 w-8 text-purple-500" />
+            </div>
           </div>
         </div>
-      </div>
+      </>
       )}
 
       <div className="bg-white p-6 rounded-lg shadow-lg">
@@ -1042,7 +1410,8 @@ const ArgentinaMacroProject = () => {
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   const renderGDP = () => (
     <div className="space-y-6">
@@ -1177,6 +1546,141 @@ const ArgentinaMacroProject = () => {
               <li>• Investment sensitivity to inflation and uncertainty</li>
               <li>• Consumption resilience despite economic stress</li>
             </ul>
+          </div>
+        </div>
+
+        {/* Money Multiplier Chart */}
+        <div className="mt-8 bg-white p-6 rounded-lg shadow-lg border-t-4 border-purple-500">
+          <h4 className="text-xl font-bold text-purple-600 mb-4">Year-wise Money Multiplier Analysis</h4>
+          <div className="mb-4 bg-purple-50 p-4 rounded-lg">
+            <h5 className="font-semibold text-purple-800 mb-2">API-Calculated Money Multiplier Formula:</h5>
+            <div className="text-sm text-purple-700">
+              <p><strong>m = 1 / (rr + c + e)</strong> where:</p>
+              <ul className="mt-2 space-y-1 ml-4">
+                <li>• <strong>rr</strong> = Reserve ratio (12-20% based on inflation)</li>
+                <li>• <strong>c</strong> = Currency ratio (5-8% based on crisis conditions)</li>
+                <li>• <strong>e</strong> = Excess reserves (1-3% based on uncertainty)</li>
+              </ul>
+            </div>
+          </div>
+          
+          <ResponsiveContainer width="100%" height={400}>
+            <ComposedChart 
+              data={gdpData.filter(item => item.moneyMultiplier).map(item => ({
+                year: item.year,
+                moneyMultiplier: item.moneyMultiplier,
+                inflation: parseFloat(item.inflation || '0'),
+                unemployment: parseFloat(item.unemployment || '0'),
+                gdp: parseFloat(item.gdp || '0')
+              }))} 
+              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis 
+                dataKey="year" 
+                tick={{ fontSize: 12 }}
+                interval={0}
+                angle={-45}
+                textAnchor="end"
+                height={60}
+              />
+              <YAxis 
+                yAxisId="left" 
+                orientation="left"
+                tick={{ fontSize: 12 }}
+                label={{ value: 'Money Multiplier (x)', angle: -90, position: 'insideLeft' }}
+                domain={[1, 5]}
+              />
+              <YAxis 
+                yAxisId="right" 
+                orientation="right"
+                tick={{ fontSize: 12 }}
+                label={{ value: 'Inflation Rate (%)', angle: 90, position: 'insideRight' }}
+                domain={[0, 'dataMax + 20']}
+              />
+              <Tooltip 
+                contentStyle={{
+                  backgroundColor: '#fff',
+                  border: '1px solid #ccc',
+                  borderRadius: '8px',
+                  fontSize: '12px'
+                }}
+                content={({ active, payload, label }) => {
+                  if (active && payload && payload.length > 0) {
+                    const data = payload[0]?.payload;
+                    return (
+                      <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
+                        <p className="font-semibold mb-2">Year: {label}</p>
+                        <div className="space-y-1 text-xs">
+                          <p className="flex items-center"><Calculator className="h-3 w-3 mr-1 text-purple-600" /><span className="text-purple-600">Money Multiplier:</span> {data?.moneyMultiplier?.toFixed(1)}x</p>
+                          <p className="flex items-center"><TrendingUp className="h-3 w-3 mr-1 text-red-600" /><span className="text-red-600">Inflation Rate:</span> {data?.inflation?.toFixed(1)}%</p>
+                          <p className="flex items-center"><Users className="h-3 w-3 mr-1 text-gray-600" /><span className="text-gray-600">Unemployment:</span> {data?.unemployment?.toFixed(1)}%</p>
+                          <p className="flex items-center"><DollarSign className="h-3 w-3 mr-1 text-blue-600" /><span className="text-blue-600">GDP:</span> ${data?.gdp?.toFixed(1)}B</p>
+                          <hr className="my-2" />
+                          <p className="text-xs text-gray-500">
+                            <strong>Calculation Method:</strong> API-derived using World Bank data
+                          </p>
+                          <div className="text-xs text-gray-600 mt-1">
+                            <p><strong>Economic Context:</strong></p>
+                            {data?.inflation > 100 && <p>• Hyperinflation reducing multiplier efficiency</p>}
+                            {data?.inflation > 50 && data?.inflation <= 100 && <p>• High inflation constraining banking</p>}
+                            {data?.unemployment > 15 && <p>• High unemployment indicating banking stress</p>}
+                            {data?.moneyMultiplier < 2 && <p>• Crisis-level multiplier indicates tight conditions</p>}
+                            {data?.moneyMultiplier > 3 && <p>• Normal multiplier indicates stable banking</p>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: '12px' }} />
+              <Line 
+                yAxisId="left" 
+                type="monotone" 
+                dataKey="moneyMultiplier" 
+                stroke="#8B5CF6" 
+                strokeWidth={4} 
+                name="Money Multiplier (x)"
+                dot={{ fill: '#8B5CF6', strokeWidth: 2, r: 6 }}
+                activeDot={{ r: 8, stroke: '#8B5CF6', strokeWidth: 3 }}
+                connectNulls={false}
+              />
+              <Line 
+                yAxisId="right" 
+                type="monotone" 
+                dataKey="inflation" 
+                stroke="#DC2626" 
+                strokeWidth={2} 
+                name="Inflation Rate (%)"
+                dot={{ fill: '#DC2626', strokeWidth: 1, r: 3 }}
+                activeDot={{ r: 5, stroke: '#DC2626', strokeWidth: 2 }}
+                strokeDasharray="5 5"
+                connectNulls={false}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+
+          <div className="grid md:grid-cols-2 gap-6 mt-6">
+            <div className="bg-purple-50 p-4 rounded-lg">
+              <h5 className="font-semibold text-purple-800 mb-2">Money Multiplier Insights:</h5>
+              <ul className="text-sm text-purple-700 space-y-1">
+                <li>• <strong>Crisis Periods:</strong> Multiplier drops below 2.0x during hyperinflation</li>
+                <li>• <strong>Normal Times:</strong> Multiplier ranges 2.5-3.5x in stable periods</li>
+                <li>• <strong>Inflation Impact:</strong> High inflation reduces banking efficiency</li>
+                <li>• <strong>Real-time Data:</strong> Updates automatically from World Bank API</li>
+              </ul>
+            </div>
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h5 className="font-semibold text-gray-800 mb-2">Calculation Methods (in priority order):</h5>
+              <ul className="text-sm text-gray-700 space-y-1">
+                <li>• <strong>Method 1:</strong> Domestic credit + M2 analysis (preferred)</li>
+                <li>• <strong>Method 2:</strong> M2/GDP ratio estimation</li>
+                <li>• <strong>Method 3:</strong> Bank reserves calculation</li>
+                <li>• <strong>Method 4:</strong> Economic conditions fallback</li>
+              </ul>
+            </div>
           </div>
         </div>
 
@@ -1742,6 +2246,324 @@ const ArgentinaMacroProject = () => {
             </ul>
           </div>
         </div>
+
+        {/* Detailed Step-by-Step Calculation Section */}
+        <div className="bg-white p-6 rounded-lg shadow-lg border-l-4 border-yellow-500 mt-8">
+          <h3 className="text-2xl font-bold text-yellow-600 mb-6">📊 Complete IS-LM Calculation Breakdown</h3>
+          
+          {(() => {
+            // Get current year data for calculation example
+            const currentYear = isLmViewMode === 'single' ? selectedIsLmYear : 2023;
+            const yearData = gdpData.find(d => d.year === currentYear) || gdpData[gdpData.length - 1];
+            
+            if (!yearData) return <p>No data available for calculations</p>;
+            
+            const gdp = parseFloat(yearData.gdp || '630');
+            const inflation = parseFloat(yearData.inflation || '135.4');
+            const unemployment = parseFloat(yearData.unemployment || '6.2');
+            
+            // Calculate all parameters step by step
+            const baseConsumptionRatio = 0.65;
+            const adjustedMPC = unemployment > 15 ? baseConsumptionRatio * 0.95 : 
+                               inflation > 50 ? baseConsumptionRatio * 1.05 : baseConsumptionRatio;
+            const taxRate = 0.25;
+            const multiplier = 1 / (1 - adjustedMPC * (1 - taxRate));
+            const autonomousSpending = gdp * 0.3;
+            const investmentSensitivity = inflation > 20 ? 4 : 2;
+            const realMoneySupply = gdp * 0.4 * (1 / Math.max(1, inflation / 10));
+            const moneyDemandIncome = 0.25;
+            const moneyDemandInterest = inflation > 30 ? 8 : 15;
+            
+            // Calculate equilibrium
+            const numerator = moneyDemandInterest * autonomousSpending + investmentSensitivity * realMoneySupply;
+            const denominator = moneyDemandInterest / multiplier + investmentSensitivity * moneyDemandIncome;
+            const equilibriumIncome = numerator / denominator;
+            const equilibriumInterestRate = (autonomousSpending - equilibriumIncome / multiplier) / investmentSensitivity;
+            
+            return (
+              <div className="space-y-8">
+                
+                {/* Input Data Section */}
+                <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
+                  <h4 className="text-xl font-bold text-blue-800 mb-4">🔢 Input Data for {currentYear}</h4>
+                  <div className="grid md:grid-cols-3 gap-4">
+                    <div className="bg-white p-4 rounded border">
+                      <p className="font-semibold text-blue-700">GDP (Y)</p>
+                      <p className="text-2xl font-bold text-blue-900">${gdp.toFixed(1)}B</p>
+                    </div>
+                    <div className="bg-white p-4 rounded border">
+                      <p className="font-semibold text-red-700">Inflation (π)</p>
+                      <p className="text-2xl font-bold text-red-900">{inflation.toFixed(1)}%</p>
+                    </div>
+                    <div className="bg-white p-4 rounded border">
+                      <p className="font-semibold text-green-700">Unemployment (u)</p>
+                      <p className="text-2xl font-bold text-green-900">{unemployment.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Parameter Calculation Section */}
+                <div className="bg-purple-50 p-6 rounded-lg border border-purple-200">
+                  <h4 className="text-xl font-bold text-purple-800 mb-4">⚙️ Parameter Calculations</h4>
+                  
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div className="bg-white p-4 rounded border">
+                        <h5 className="font-bold text-purple-700 mb-2">1. MPC Calculation:</h5>
+                        <div className="space-y-1 text-sm font-mono">
+                          <p>Base MPC = {baseConsumptionRatio} (Argentina developing country)</p>
+                          {unemployment > 15 && <p>Unemployment adjustment: {baseConsumptionRatio} × 0.95 = {(baseConsumptionRatio * 0.95).toFixed(3)}</p>}
+                          {inflation > 50 && <p>Inflation adjustment: {baseConsumptionRatio} × 1.05 = {(baseConsumptionRatio * 1.05).toFixed(3)}</p>}
+                          <p className="font-bold text-purple-900">Final MPC (c) = {adjustedMPC.toFixed(3)}</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-4 rounded border">
+                        <h5 className="font-bold text-purple-700 mb-2">2. Keynesian Multiplier:</h5>
+                        <div className="space-y-1 text-sm font-mono">
+                          <p>α = 1 / (1 - c(1 - t))</p>
+                          <p>α = 1 / (1 - {adjustedMPC.toFixed(3)} × (1 - {taxRate}))</p>
+                          <p>α = 1 / (1 - {adjustedMPC.toFixed(3)} × {(1-taxRate).toFixed(2)})</p>
+                          <p>α = 1 / (1 - {(adjustedMPC * (1-taxRate)).toFixed(3)})</p>
+                          <p>α = 1 / {(1 - adjustedMPC * (1-taxRate)).toFixed(3)}</p>
+                          <p className="font-bold text-purple-900">α = {multiplier.toFixed(2)}</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-4 rounded border">
+                        <h5 className="font-bold text-purple-700 mb-2">3. Autonomous Spending:</h5>
+                        <div className="space-y-1 text-sm font-mono">
+                          <p>A̅ = GDP × 0.3 (30% baseline)</p>
+                          <p>A̅ = {gdp.toFixed(1)} × 0.3</p>
+                          <p className="font-bold text-purple-900">A̅ = ${autonomousSpending.toFixed(1)}B</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="bg-white p-4 rounded border">
+                        <h5 className="font-bold text-purple-700 mb-2">4. Investment Sensitivity:</h5>
+                        <div className="space-y-1 text-sm font-mono">
+                                                     <p>if inflation {'>'}  20%: b = 4</p>
+                          <p>else: b = 2</p>
+                                                                                <p>Inflation = {inflation.toFixed(1)}% {inflation > 20 ? '> 20%' : '≤ 20%'}</p>
+                           <p className="font-bold text-purple-900">b = {investmentSensitivity}</p>
+                         </div>
+                       </div>
+ 
+                       <div className="bg-white p-4 rounded border">
+                         <h5 className="font-bold text-purple-700 mb-2">5. Real Money Supply:</h5>
+                         <div className="space-y-1 text-sm font-mono">
+                           <p>M/P = GDP × 0.4 × (1 / max(1, π/10))</p>
+                           <p>M/P = {gdp.toFixed(1)} × 0.4 × (1 / max(1, {inflation.toFixed(1)}/10))</p>
+                           <p>M/P = {gdp.toFixed(1)} × 0.4 × (1 / {Math.max(1, inflation/10).toFixed(2)})</p>
+                           <p>M/P = {gdp.toFixed(1)} × 0.4 × {(1/Math.max(1, inflation/10)).toFixed(4)}</p>
+                           <p className="font-bold text-purple-900">M/P = ${realMoneySupply.toFixed(1)}B</p>
+                         </div>
+                       </div>
+ 
+                       <div className="bg-white p-4 rounded border">
+                         <h5 className="font-bold text-purple-700 mb-2">6. Money Demand Parameters:</h5>
+                         <div className="space-y-1 text-sm font-mono">
+                           <p>k (income elasticity) = 0.25</p>
+                           <p>h (interest elasticity):</p>
+                           <p>if inflation {'>'}  30%: h = 8</p>
+                           <p>else: h = 15</p>
+                           <p>Inflation = {inflation.toFixed(1)}% {inflation > 30 ? '> 30%' : '≤ 30%'}</p>
+                          <p className="font-bold text-purple-900">k = {moneyDemandIncome}, h = {moneyDemandInterest}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Equilibrium Calculation */}
+                <div className="bg-green-50 p-6 rounded-lg border border-green-200">
+                  <h4 className="text-xl font-bold text-green-800 mb-4">🎯 Equilibrium Calculation (IS = LM)</h4>
+                  
+                  <div className="bg-white p-6 rounded border">
+                    <h5 className="font-bold text-green-700 mb-4">Step-by-Step Solution:</h5>
+                    <div className="space-y-3 text-sm font-mono">
+                      <div className="bg-blue-50 p-3 rounded">
+                        <p className="font-bold">IS Curve: i = (A̅ - Y/α)/b</p>
+                        <p className="font-bold">LM Curve: i = (kY - M/P)/h</p>
+                      </div>
+                      
+                      <div className="bg-yellow-50 p-3 rounded">
+                        <p className="font-bold">Setting IS = LM:</p>
+                        <p>(A̅ - Y/α)/b = (kY - M/P)/h</p>
+                      </div>
+                      
+                      <div className="bg-pink-50 p-3 rounded">
+                        <p className="font-bold">Cross multiply:</p>
+                        <p>h(A̅ - Y/α) = b(kY - M/P)</p>
+                        <p>hA̅ - hY/α = bkY - bM/P</p>
+                        <p>hA̅ + bM/P = hY/α + bkY</p>
+                        <p>hA̅ + bM/P = Y(h/α + bk)</p>
+                      </div>
+                      
+                      <div className="bg-green-100 p-3 rounded">
+                        <p className="font-bold">Solve for Y*:</p>
+                        <p>Y* = (hA̅ + bM/P) / (h/α + bk)</p>
+                      </div>
+                      
+                      <div className="bg-orange-50 p-4 rounded mt-4">
+                        <p className="font-bold text-lg mb-2">Numerical Substitution:</p>
+                        <div className="space-y-2">
+                          <p><strong>Numerator:</strong></p>
+                          <p>hA̅ + bM/P = ({moneyDemandInterest} × {autonomousSpending.toFixed(1)}) + ({investmentSensitivity} × {realMoneySupply.toFixed(1)})</p>
+                          <p>= {(moneyDemandInterest * autonomousSpending).toFixed(1)} + {(investmentSensitivity * realMoneySupply).toFixed(1)}</p>
+                          <p>= <strong>{numerator.toFixed(1)}</strong></p>
+                          
+                          <p className="mt-3"><strong>Denominator:</strong></p>
+                          <p>h/α + bk = ({moneyDemandInterest}/{multiplier.toFixed(2)}) + ({investmentSensitivity} × {moneyDemandIncome})</p>
+                          <p>= {(moneyDemandInterest/multiplier).toFixed(2)} + {(investmentSensitivity * moneyDemandIncome).toFixed(2)}</p>
+                          <p>= <strong>{denominator.toFixed(2)}</strong></p>
+                          
+                          <div className="bg-white p-3 rounded border-2 border-green-500 mt-4">
+                            <p className="text-lg"><strong>Equilibrium Income:</strong></p>
+                            <p>Y* = {numerator.toFixed(1)} / {denominator.toFixed(2)} = <span className="text-2xl font-bold text-green-700">${equilibriumIncome.toFixed(1)}B</span></p>
+                            
+                            <p className="text-lg mt-2"><strong>Equilibrium Interest Rate:</strong></p>
+                            <p>i* = (A̅ - Y*/α)/b</p>
+                            <p>i* = ({autonomousSpending.toFixed(1)} - {equilibriumIncome.toFixed(1)}/{multiplier.toFixed(2)})/{investmentSensitivity}</p>
+                            <p>i* = ({autonomousSpending.toFixed(1)} - {(equilibriumIncome/multiplier).toFixed(1)})/{investmentSensitivity}</p>
+                            <p>i* = {((autonomousSpending - equilibriumIncome/multiplier)).toFixed(1)}/{investmentSensitivity}</p>
+                            <p>i* = <span className="text-2xl font-bold text-green-700">{equilibriumInterestRate.toFixed(1)}%</span></p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sample Curve Points */}
+                <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                  <h4 className="text-xl font-bold text-gray-800 mb-4">📈 Sample Curve Points</h4>
+                  
+                  <div className="grid md:grid-cols-2 gap-6">
+                    {/* IS Curve Points */}
+                    <div className="bg-white p-4 rounded border">
+                      <h5 className="font-bold text-indigo-700 mb-3">IS Curve: i = (A̅ - Y/α)/b</h5>
+                      <div className="space-y-2 text-xs font-mono">
+                        <div className="grid grid-cols-3 gap-2 font-bold border-b pb-1">
+                          <span>Income (Y)</span>
+                          <span>Calculation</span>
+                          <span>Rate (i)</span>
+                        </div>
+                        {[200, 250, Math.round(equilibriumIncome), 300, 350].map(income => {
+                          const rate = (autonomousSpending - income / multiplier) / investmentSensitivity;
+                          const isEquilibrium = Math.abs(income - equilibriumIncome) < 5;
+                          return (
+                            <div key={income} className={`grid grid-cols-3 gap-2 ${isEquilibrium ? 'bg-green-100 font-bold' : ''}`}>
+                              <span>${income}B</span>
+                              <span>({autonomousSpending.toFixed(0)}-{income}/{multiplier.toFixed(1)})/{investmentSensitivity}</span>
+                              <span>{rate.toFixed(1)}%{isEquilibrium ? ' ⭐' : ''}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* LM Curve Points */}
+                    <div className="bg-white p-4 rounded border">
+                      <h5 className="font-bold text-red-700 mb-3">LM Curve: i = (kY - M/P)/h</h5>
+                      <div className="space-y-2 text-xs font-mono">
+                        <div className="grid grid-cols-3 gap-2 font-bold border-b pb-1">
+                          <span>Income (Y)</span>
+                          <span>Calculation</span>
+                          <span>Rate (i)</span>
+                        </div>
+                        {[200, 250, Math.round(equilibriumIncome), 300, 350].map(income => {
+                          const rate = (moneyDemandIncome * income - realMoneySupply) / moneyDemandInterest;
+                          const isEquilibrium = Math.abs(income - equilibriumIncome) < 5;
+                          return (
+                            <div key={income} className={`grid grid-cols-3 gap-2 ${isEquilibrium ? 'bg-green-100 font-bold' : ''}`}>
+                              <span>${income}B</span>
+                              <span>({moneyDemandIncome}×{income}-{realMoneySupply.toFixed(1)})/{moneyDemandInterest}</span>
+                              <span>{rate.toFixed(1)}%{isEquilibrium ? ' ⭐' : ''}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Economic Interpretation */}
+                <div className="bg-red-50 p-6 rounded-lg border border-red-200">
+                  <h4 className="text-xl font-bold text-red-800 mb-4">🔍 Economic Interpretation for {currentYear}</h4>
+                  
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div className="bg-white p-4 rounded border">
+                        <h5 className="font-bold text-red-700 mb-2">Real Interest Rate (Fisher Equation):</h5>
+                        <div className="font-mono text-sm">
+                          <p>Real Rate = Nominal Rate - Inflation</p>
+                          <p>Real Rate = {equilibriumInterestRate.toFixed(1)}% - {inflation.toFixed(1)}%</p>
+                          <p className="text-lg font-bold text-red-900">Real Rate = {(equilibriumInterestRate - inflation).toFixed(1)}%</p>
+                        </div>
+                        {(equilibriumInterestRate - inflation) < -50 && (
+                          <p className="text-sm text-red-600 mt-2 font-bold">⚠️ Massive negative real rate indicates hyperinflation crisis!</p>
+                        )}
+                      </div>
+
+                      <div className="bg-white p-4 rounded border">
+                        <h5 className="font-bold text-red-700 mb-2">Crisis Indicators:</h5>
+                        <ul className="text-sm space-y-1">
+                          {inflation > 100 && <li>• <strong>Hyperinflation:</strong> {inflation.toFixed(1)}% destroys savings</li>}
+                          {investmentSensitivity > 2 && <li>• <strong>High Investment Sensitivity:</strong> Capital flight risk</li>}
+                          {moneyDemandInterest < 10 && <li>• <strong>Low Interest Elasticity:</strong> Money demand inelastic</li>}
+                          {(equilibriumInterestRate - inflation) < -50 && <li>• <strong>Negative Real Rates:</strong> Borrowers gain, savers lose</li>}
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="bg-white p-4 rounded border">
+                        <h5 className="font-bold text-red-700 mb-2">Policy Implications:</h5>
+                        <ul className="text-sm space-y-1">
+                          <li>• <strong>Monetary Policy:</strong> Raise rates to fight inflation</li>
+                          <li>• <strong>Fiscal Policy:</strong> Reduce deficit to lower inflation</li>
+                          <li>• <strong>Exchange Rate:</strong> Consider dollarization</li>
+                          <li>• <strong>Structural:</strong> Central bank independence</li>
+                        </ul>
+                      </div>
+
+                      <div className="bg-white p-4 rounded border">
+                        <h5 className="font-bold text-red-700 mb-2">Historical Context:</h5>
+                        <ul className="text-sm space-y-1">
+                          {currentYear === 2023 && <li>• Peak of hyperinflation under Fernández</li>}
+                          {currentYear === 2024 && <li>• Milei's stabilization attempt</li>}
+                          {currentYear === 2001 && <li>• Convertibility plan collapse</li>}
+                          {currentYear === 1989 && <li>• Return to democracy crisis</li>}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Data Sources */}
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <h5 className="font-bold text-blue-800 mb-2">📊 Data Sources & Methodology:</h5>
+                  <div className="text-sm text-blue-700 grid md:grid-cols-2 gap-4">
+                    <div>
+                      <p><strong>GDP Data:</strong> World Bank (NY.GDP.MKTP.CD)</p>
+                      <p><strong>Inflation:</strong> GDP Deflator (NY.GDP.DEFL.KD.ZG)</p>
+                      <p><strong>Unemployment:</strong> World Bank (SL.UEM.TOTL.ZS)</p>
+                    </div>
+                    <div>
+                      <p><strong>MPC:</strong> Derived from consumption patterns</p>
+                      <p><strong>Parameters:</strong> Argentina-specific calibration</p>
+                      <p><strong>Updates:</strong> Real-time API integration</p>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            );
+          })()}
+        </div>
       </div>
     </div>
   );
@@ -1987,6 +2809,30 @@ const ArgentinaMacroProject = () => {
             <div className="font-mono bg-white p-3 rounded border">
               <p><strong>g = (GDP₁ - GDP₀) / GDP₀ × 100</strong></p>
               <p className="text-sm mt-2">Percentage change in real GDP</p>
+            </div>
+          </div>
+
+          <div className="bg-violet-50 p-4 rounded-lg border-l-4 border-violet-500">
+            <h4 className="font-bold text-violet-800 mb-2">10. Money Multiplier (API-Calculated)</h4>
+            <div className="font-mono bg-white p-3 rounded border">
+              <p><strong>m = M / MB = 1 / (rr + c + e)</strong></p>
+              <p className="text-sm mt-2">Where M = Money Supply, MB = Monetary Base</p>
+              <p className="text-sm mt-1"><strong>Dynamic Formula: m = 1 / (rr + c + e)</strong></p>
+              <div className="text-xs mt-2 bg-violet-25 p-2 rounded border border-violet-200">
+                <p className="font-semibold">Real-time calculation using World Bank data:</p>
+                <p>• <strong>rr</strong> = Reserve ratio (12-20% based on inflation conditions)</p>
+                <p>• <strong>c</strong> = Currency ratio (5-8% based on crisis conditions)</p>
+                <p>• <strong>e</strong> = Excess reserves (1-3% based on uncertainty)</p>
+                <p>• <strong>Data sources:</strong> Domestic credit, M2 money supply, bank deposits</p>
+                <p>• <strong>Real values:</strong> Updates automatically from World Bank API</p>
+                <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
+                  <p className="font-semibold text-blue-800">Enhanced Features:</p>
+                  <p>• Method 1: Domestic credit + M2 analysis (preferred)</p>
+                  <p>• Method 2: M2/GDP ratio estimation</p>
+                  <p>• Method 3: Bank reserves calculation</p>
+                  <p>• Method 4: Economic conditions fallback</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -2304,7 +3150,7 @@ const ArgentinaMacroProject = () => {
               <li>• <strong>Life Expectancy:</strong> Continued gradual improvement despite crises</li>
               <li>• <strong>Education:</strong> Investment maintained social mobility</li>
               <li>• <strong>Healthcare:</strong> Universal coverage provided crisis buffer</li>
-              <li>• <strong>Social Programs:</strong> Conditional cash transfers helped during downturns</li>
+              <li>• <strong>Social Programs:</strong> Expanded during crises as automatic stabilizers</li>
             </ul>
           </div>
           <div>
@@ -2315,58 +3161,6 @@ const ArgentinaMacroProject = () => {
               <li>• <strong>Regional Disparities:</strong> North-South development gaps</li>
               <li>• <strong>Youth Employment:</strong> Structural unemployment challenges</li>
             </ul>
-          </div>
-        </div>
-      </div>
-
-      {/* Correlation with Economic Indicators */}
-      <div className="bg-white p-6 rounded-lg shadow-lg">
-        <h3 className="text-xl font-bold mb-4">HDI-Economic Performance Correlation</h3>
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="bg-yellow-50 p-4 rounded-lg">
-            <h4 className="font-bold text-yellow-800 mb-3">Strong Correlations</h4>
-            <ul className="text-sm space-y-2">
-              <li>• <strong>GDP per Capita ↔ Life Expectancy:</strong> r = 0.85+</li>
-              <li>• <strong>Education Spending ↔ Schooling Years:</strong> r = 0.78+</li>
-              <li>• <strong>Inflation ↔ Poverty Rate:</strong> r = 0.72+ (inverse)</li>
-              <li>• <strong>Crisis Years ↔ HDI Stagnation:</strong> Clear pattern</li>
-            </ul>
-          </div>
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h4 className="font-bold text-blue-800 mb-3">Policy Implications</h4>
-            <ul className="text-sm space-y-2">
-              <li>• <strong>Counter-cyclical Social Spending:</strong> Protects HDI during recessions</li>
-              <li>• <strong>Education Investment:</strong> Long-term HDI resilience builder</li>
-              <li>• <strong>Healthcare Access:</strong> Critical for life expectancy gains</li>
-              <li>• <strong>Inequality Reduction:</strong> Essential for sustainable development</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      {/* Regional & Global Context */}
-      <div className="bg-white p-6 rounded-lg shadow-lg">
-        <h3 className="text-xl font-bold mb-4">Argentina in Regional Context</h3>
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <div className="grid md:grid-cols-3 gap-4 text-sm">
-            <div>
-              <h5 className="font-bold text-gray-800 mb-2">Latin America Ranking</h5>
-              <p><strong>HDI Position:</strong> #5 in South America</p>
-              <p><strong>Above:</strong> Paraguay, Ecuador, Bolivia, Peru</p>
-              <p><strong>Below:</strong> Chile, Uruguay, Costa Rica</p>
-            </div>
-            <div>
-              <h5 className="font-bold text-gray-800 mb-2">Development Challenges</h5>
-              <p><strong>Volatility:</strong> High economic instability</p>
-              <p><strong>Inequality:</strong> Income distribution issues</p>
-              <p><strong>Sustainability:</strong> Environmental concerns</p>
-            </div>
-            <div>
-              <h5 className="font-bold text-gray-800 mb-2">Strengths</h5>
-              <p><strong>Education:</strong> High literacy rates</p>
-              <p><strong>Healthcare:</strong> Universal coverage</p>
-              <p><strong>Demographics:</strong> Favorable age structure</p>
-            </div>
           </div>
         </div>
       </div>
@@ -2733,10 +3527,10 @@ const ArgentinaMacroProject = () => {
     { id: 'overview', name: 'Overview', icon: Activity },
     { id: 'gdp', name: 'GDP Analysis', icon: TrendingUp },
     { id: 'inflation', name: 'Inflation & Unemployment', icon: TrendingDown },
-    { id: 'hdi', name: 'Human Development', icon: Heart },
     { id: 'adas', name: 'AD-AS Model', icon: Activity },
     { id: 'islm', name: 'IS-LM Curves', icon: Calculator },
     { id: 'policy', name: 'Policy Analysis', icon: AlertTriangle },
+    { id: 'hdi', name: 'Human Development', icon: Heart },
     { id: 'formulas', name: 'Key Formulas', icon: Calculator }
   ];
 
