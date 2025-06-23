@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, ComposedChart, Area, AreaChart } from 'recharts';
-import { TrendingUp, TrendingDown, DollarSign, Users, Activity, Calculator, Loader, AlertTriangle, Heart, Home, Factory, Building, Globe, BarChart3, Info, Target, CheckCircle, AlertCircle } from 'lucide-react';
+import { Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, Bar, Scatter } from 'recharts';
+import { TrendingUp, TrendingDown, DollarSign, Users, Activity, Calculator, Loader, AlertTriangle, Heart, Home, Factory, Building, Globe, BarChart3, Info, Target, CheckCircle } from 'lucide-react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 
@@ -14,8 +14,19 @@ const ArgentinaMacroProject = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedYears, setSelectedYears] = useState(15); // Default to 15 years
   const [selectedHDIYears, setSelectedHDIYears] = useState(40); // Default to 40 years for HDI
-  const [isLmViewMode, setIsLmViewMode] = useState<'all' | 'single'>('all');
-  const [selectedIsLmYear, setSelectedIsLmYear] = useState<number>(2024);
+  const [isLmViewMode, setIsLmViewMode] = useState<'all' | 'single' | 'compare'>('all');
+  const [selectedIsLmYear, setSelectedIsLmYear] = useState<number>(2023);
+  const [enableIsLmComparison, setEnableIsLmComparison] = useState<boolean>(false);
+  const [compareIsLmYear, setCompareIsLmYear] = useState<number>(2020);
+  
+  // Custom period selection state
+  const [useCustomPeriod, setUseCustomPeriod] = useState(false);
+  const [customStartYear, setCustomStartYear] = useState(2010);
+  const [customEndYear, setCustomEndYear] = useState(2024);
+  const [useCustomHDIPeriod, setUseCustomHDIPeriod] = useState(false);
+  const [customHDIStartYear, setCustomHDIStartYear] = useState(1990);
+  const [customHDIEndYear, setCustomHDIEndYear] = useState(2024);
+  
   const [currentStats, setCurrentStats] = useState({
     gdp: 0,
     inflation: 0,
@@ -23,8 +34,12 @@ const ArgentinaMacroProject = () => {
     moneyMultiplier: 0
   });
 
-  // Year range options for dropdown
+  // Year range options for dropdown (extended to 50 years)
   const yearRangeOptions = [
+    { value: 1, label: 'Last 1 Year' },
+    { value: 2, label: 'Last 2 Years' },
+    { value: 3, label: 'Last 3 Years' },
+    { value: 4, label: 'Last 4 Years' },
     { value: 5, label: 'Last 5 Years' },
     { value: 10, label: 'Last 10 Years' },
     { value: 15, label: 'Last 15 Years' },
@@ -32,11 +47,17 @@ const ArgentinaMacroProject = () => {
     { value: 25, label: 'Last 25 Years' },
     { value: 30, label: 'Last 30 Years' },
     { value: 35, label: 'Last 35 Years' },
-    { value: 40, label: 'Last 40 Years' }
+    { value: 40, label: 'Last 40 Years' },
+    { value: 45, label: 'Last 45 Years' },
+    { value: 50, label: 'Last 50 Years' }
   ];
 
-  // HDI specific year range options (comprehensive)
+  // HDI specific year range options (extended to 50 years)
   const hdiYearRangeOptions = [
+    { value: 1, label: 'Last 1 Year' },
+    { value: 2, label: 'Last 2 Years' },
+    { value: 3, label: 'Last 3 Years' },
+    { value: 4, label: 'Last 4 Years' },
     { value: 5, label: 'Last 5 Years' },
     { value: 10, label: 'Last 10 Years' },
     { value: 15, label: 'Last 15 Years' },
@@ -44,15 +65,175 @@ const ArgentinaMacroProject = () => {
     { value: 25, label: 'Last 25 Years' },
     { value: 30, label: 'Last 30 Years' },
     { value: 35, label: 'Last 35 Years' },
-    { value: 40, label: 'Last 40 Years' }
+    { value: 40, label: 'Last 40 Years' },
+    { value: 45, label: 'Last 45 Years' },
+    { value: 50, label: 'Last 50 Years' }
   ];
+
+  // Helper functions for period calculations - wrapped in useCallback to prevent infinite re-renders
+  const getEffectiveYears = useCallback(() => {
+    console.log('getEffectiveYears called:', { useCustomPeriod, customStartYear, customEndYear, selectedYears });
+    if (useCustomPeriod) {
+      return Math.abs(customEndYear - customStartYear) + 1;
+    }
+    return selectedYears;
+  }, [useCustomPeriod, customStartYear, customEndYear, selectedYears]);
+
+  const getEffectiveHDIYears = useCallback(() => {
+    console.log('getEffectiveHDIYears called:', { useCustomHDIPeriod, customHDIStartYear, customHDIEndYear, selectedHDIYears });
+    if (useCustomHDIPeriod) {
+      return Math.abs(customHDIEndYear - customHDIStartYear) + 1;
+    }
+    return selectedHDIYears;
+  }, [useCustomHDIPeriod, customHDIStartYear, customHDIEndYear, selectedHDIYears]);
+
+  const getEffectiveStartYear = useCallback(() => {
+    console.log('getEffectiveStartYear called:', { useCustomPeriod, customStartYear, customEndYear, selectedYears });
+    if (useCustomPeriod) {
+      return Math.min(customStartYear, customEndYear);
+    }
+    return new Date().getFullYear() - selectedYears;
+  }, [useCustomPeriod, customStartYear, customEndYear, selectedYears]);
+
+  const getEffectiveEndYear = useCallback(() => {
+    console.log('getEffectiveEndYear called:', { useCustomPeriod, customStartYear, customEndYear });
+    if (useCustomPeriod) {
+      return Math.max(customStartYear, customEndYear);
+    }
+    return new Date().getFullYear();
+  }, [useCustomPeriod, customStartYear, customEndYear]);
+
+  const getEffectiveHDIStartYear = useCallback(() => {
+    console.log('getEffectiveHDIStartYear called:', { useCustomHDIPeriod, customHDIStartYear, customHDIEndYear, selectedHDIYears });
+    if (useCustomHDIPeriod) {
+      return Math.min(customHDIStartYear, customHDIEndYear);
+    }
+    return new Date().getFullYear() - selectedHDIYears;
+  }, [useCustomHDIPeriod, customHDIStartYear, customHDIEndYear, selectedHDIYears]);
+
+  const getEffectiveHDIEndYear = useCallback(() => {
+    console.log('getEffectiveHDIEndYear called:', { useCustomHDIPeriod, customHDIStartYear, customHDIEndYear });
+    if (useCustomHDIPeriod) {
+      return Math.max(customHDIStartYear, customHDIEndYear);
+    }
+    return new Date().getFullYear();
+  }, [useCustomHDIPeriod, customHDIStartYear, customHDIEndYear]);
+
+  // Generate year options for custom period selection (1974-2024, covering 50 years)
+  const generateYearOptions = () => {
+    const currentYear = new Date().getFullYear();
+    const startYear = currentYear - 50;
+    const years = [];
+    for (let year = startYear; year <= currentYear; year++) {
+      years.push(year);
+    }
+    return years;
+  };
+
+  const yearOptions = generateYearOptions();
+
+    // Period Selector Component
+  const renderPeriodSelector = (
+    isCustom: boolean,
+    setIsCustom: (value: boolean) => void,
+    selectedYears: number,
+    setSelectedYears: (value: number) => void,
+    customStart: number,
+    setCustomStart: (value: number) => void,
+    customEnd: number,
+    setCustomEnd: (value: number) => void,
+    rangeOptions: { value: number; label: string }[],
+    individualYears: number[],
+    className = "mt-2 md:mt-0",
+    labelClassName = "block text-sm font-medium text-gray-600 mb-1"
+  ) => (
+    <div className={`${className} min-w-[280px]`}>
+      <label className={labelClassName}>Time Range:</label>
+      
+      {/* Checkbox and dropdown in horizontal layout */}
+      <div className="flex items-center space-x-4">
+        {/* Custom Period Checkbox */}
+        <div className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={isCustom}
+            onChange={(e) => {
+              console.log('Custom period checkbox changed:', e.target.checked);
+              setIsCustom(e.target.checked);
+            }}
+            className="rounded text-blue-600 focus:ring-blue-400"
+            disabled={loading}
+          />
+          <label className="text-sm whitespace-nowrap">Custom Period</label>
+        </div>
+        
+        {/* Dropdown or Custom Period Selectors */}
+        {!isCustom ? (
+          <select
+            value={selectedYears}
+            onChange={(e) => {
+              console.log('Year range changed:', e.target.value);
+              setSelectedYears(Number(e.target.value));
+            }}
+            className="px-3 py-2 bg-white text-gray-800 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm flex-1 min-w-[140px]"
+            disabled={loading}
+          >
+            {rangeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div className="flex items-center space-x-2 flex-1">
+            <div className="flex flex-col">
+              <label className="block text-xs text-gray-600 mb-1">From:</label>
+              <select
+                value={customStart}
+                onChange={(e) => {
+                  console.log('Custom start year changed:', e.target.value);
+                  setCustomStart(Number(e.target.value));
+                }}
+                className="px-2 py-1 bg-white text-gray-800 rounded border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm w-20"
+                disabled={loading}
+              >
+                {individualYears.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col">
+              <label className="block text-xs text-gray-600 mb-1">To:</label>
+              <select
+                value={customEnd}
+                onChange={(e) => {
+                  console.log('Custom end year changed:', e.target.value);
+                  setCustomEnd(Number(e.target.value));
+                }}
+                className="px-2 py-1 bg-white text-gray-800 rounded border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm w-20"
+                disabled={loading}
+              >
+                {individualYears.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
 
 
   // World Bank API endpoints for Argentina (ARG)
   // API configuration
   const WORLD_BANK_BASE = 'https://api.worldbank.org/v2';
-  const IMF_BASE = 'https://api.imf.org/external/datamapper/api/v1';
+  // const IMF_BASE = 'https://api.imf.org/external/datamapper/api/v1';
   const COUNTRY_CODE = 'ARG';
 
   // World Bank API indicators (using working indicators for Argentina)
@@ -85,6 +266,14 @@ const ArgentinaMacroProject = () => {
     BANK_DEPOSITS: 'FD.RES.LIQU.AS.ZS', // Bank liquid reserves to bank assets ratio (%)
     DOMESTIC_CREDIT: 'FS.AST.DOMS.GD.ZS', // Domestic credit provided by financial sector (% of GDP)
     RESERVE_MONEY: 'FM.LBL.BMNY.IR.ZS', // Claims on central government, etc. (% of broad money)
+    // Exchange rate and monetary policy indicators
+    EXCHANGE_RATE: 'PA.NUS.FCRF', // Official exchange rate (LCU per US$, period average)
+    REAL_EXCHANGE_RATE: 'PX.REX.REER', // Real effective exchange rate index (2010 = 100)
+    INTEREST_RATE: 'FR.INR.RINR', // Real interest rate (%)
+    LENDING_RATE: 'FR.INR.LEND', // Lending interest rate (%)
+    CURRENT_ACCOUNT: 'BN.CAB.XOKA.GD.ZS', // Current account balance (% of GDP)
+    FOREIGN_RESERVES: 'FI.RES.TOTL.CD', // Total reserves (includes gold, current US$)
+    CAPITAL_FLOWS: 'BX.KLT.DINV.WD.GD.ZS', // Foreign direct investment, net inflows (% of GDP)
     // HDI and Social Development Indicators
     LIFE_EXPECTANCY: 'SP.DYN.LE00.IN', // Life expectancy at birth, total (years)
     EDUCATION_INDEX: 'SE.ADT.LITR.ZS', // Literacy rate, adult total (% of people ages 15 and above)
@@ -96,14 +285,31 @@ const ArgentinaMacroProject = () => {
     EDUCATION_EXPENDITURE: 'SE.XPD.TOTL.GD.ZS' // Government expenditure on education, total (% of GDP)
   };
 
-  // IMF indicators for more recent data
-  const IMF_INDICATORS = {
-    GDP: 'NGDPD', // Nominal GDP in USD
-    INFLATION: 'PCPIPCH', // Inflation rate
-    UNEMPLOYMENT: 'LUR', // Unemployment rate
-    CURRENT_ACCOUNT: 'BCA', // Current account balance
-    GOVERNMENT_DEBT: 'GGXWDG_NGDP' // Government debt as % of GDP
+  // BCRA (Central Bank of Argentina) API
+  const BCRA_BASE = 'https://api.bcra.gob.ar/estadisticas/v2.0';
+  
+  // BCRA Variable IDs for key monetary indicators
+  const BCRA_INDICATORS = {
+    MONETARY_BASE: 1, // Base Monetaria
+    MONEY_SUPPLY_M2: 31, // M2 Money Supply
+    MONEY_SUPPLY_M3: 32, // M3 Money Supply  
+    INTEREST_RATE_POLICY: 4, // Tasa de Política Monetaria (LELIQ)
+    EXCHANGE_RATE_USD: 5, // Tipo de Cambio USD/ARS
+    BANK_DEPOSITS: 7, // Depósitos del Sistema Financiero
+    BANK_CREDIT: 12, // Crédito al Sector Privado
+    FOREIGN_RESERVES: 1, // Reservas Internacionales
+    REPO_RATE: 4, // Tasa de Repo
+    INFLATION_MONTHLY: 31 // Inflación Mensual
   };
+
+  // IMF indicators for more recent data
+  // const IMF_INDICATORS = {
+  //   GDP: 'NGDPD', // Nominal GDP in USD
+  //   INFLATION: 'PCPIPCH', // Inflation rate
+  //   UNEMPLOYMENT: 'LUR', // Unemployment rate
+  //   CURRENT_ACCOUNT: 'BCA', // Current account balance
+  //   GOVERNMENT_DEBT: 'GGXWDG_NGDP' // Government debt as % of GDP
+  // };
 
   // Types for World Bank API response
   interface WorldBankDataPoint {
@@ -115,6 +321,14 @@ const ArgentinaMacroProject = () => {
     };
   }
 
+  interface BCRADataPoint {
+    idVariable: number;
+    cdSerie: number;
+    descripcion: string;
+    fecha: string;
+    valor: number;
+  }
+
   interface ProcessedDataPoint {
     year: number;
     gdp?: string;
@@ -123,6 +337,13 @@ const ArgentinaMacroProject = () => {
     inflation?: string;
     unemployment?: string;
     moneyMultiplier?: number;
+    exchangeRate?: number;
+    realExchangeRate?: number;
+    interestRate?: number;
+    lendingRate?: number;
+    currentAccount?: number;
+    foreignReserves?: number;
+    capitalFlows?: number;
   }
 
   interface HDIDataPoint {
@@ -141,13 +362,13 @@ const ArgentinaMacroProject = () => {
 
 
   // Enhanced World Bank API fetching with timeout and better error handling
-  const fetchWorldBankData = async (indicator: string, yearsBack: number): Promise<WorldBankDataPoint[]> => {
+  const fetchWorldBankData = async (indicator: string, yearsBack: number, startYear?: number, endYear?: number): Promise<WorldBankDataPoint[]> => {
     try {
       const currentYear = new Date().getFullYear();
-      const startYear = currentYear - yearsBack;
-      const endYear = currentYear; // Include current year
+      const effectiveStartYear = startYear || (currentYear - yearsBack);
+      const effectiveEndYear = endYear || currentYear;
       
-      const url = `${WORLD_BANK_BASE}/country/${COUNTRY_CODE}/indicator/${indicator}?date=${startYear}:${endYear}&format=json&per_page=200`;
+      const url = `${WORLD_BANK_BASE}/country/${COUNTRY_CODE}/indicator/${indicator}?date=${effectiveStartYear}:${effectiveEndYear}&format=json&per_page=200`;
       console.log(`Fetching: ${url}`);
       
       const controller = new AbortController();
@@ -185,51 +406,114 @@ const ArgentinaMacroProject = () => {
     }
   };
 
-
-
-  // Fetch comprehensive economic data from World Bank
-  const fetchEconomicData = useCallback(async (yearsBack: number) => {
+  // Fetch BCRA (Central Bank of Argentina) data
+  const fetchBCRAData = async (variableId: number, startYear?: number, endYear?: number): Promise<BCRADataPoint[]> => {
     try {
-      console.log('Fetching economic data for last', yearsBack, 'years...');
+      const currentYear = new Date().getFullYear();
+      const effectiveStartYear = startYear || (currentYear - 10);
+      const effectiveEndYear = endYear || currentYear;
       
-      // Fetch basic indicators
-      const [gdpData, growthData, perCapitaData, inflationData, inflationAltData, unemploymentData] = await Promise.all([
-        fetchWorldBankData(WB_INDICATORS.GDP, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.GDP_GROWTH, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.GDP_PER_CAPITA, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.INFLATION, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.INFLATION_ALT, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.UNEMPLOYMENT, yearsBack)
+      // Format dates as YYYY-MM-DD for BCRA API
+      const startDate = `${effectiveStartYear}-01-01`;
+      const endDate = `${effectiveEndYear}-12-31`;
+      
+      const url = `${BCRA_BASE}/dato/${variableId}?desde=${startDate}&hasta=${endDate}`;
+      console.log(`Fetching BCRA data: ${url}`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout for BCRA
+      
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json',
+        }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`BCRA API HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log(`BCRA variable ${variableId} response:`, data);
+      
+      // BCRA API returns an object with 'results' array
+      if (data && Array.isArray(data.results)) {
+        return data.results;
+      } else if (Array.isArray(data)) {
+        return data;
+      } else {
+        console.warn(`Unexpected BCRA API response format for variable ${variableId}:`, data);
+        return [];
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error(`Timeout fetching BCRA variable ${variableId}`);
+      } else {
+        console.error(`Error fetching BCRA variable ${variableId}:`, error);
+      }
+      return [];
+    }
+  };
+
+  // Fetch comprehensive economic data from World Bank and BCRA
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const fetchEconomicData = useCallback(async (yearsBack: number, startYear?: number, endYear?: number) => {
+    try {
+      const periodDesc = startYear && endYear ? `${startYear}-${endYear}` : `last ${yearsBack} years`;
+      console.log('Fetching economic data for', periodDesc);
+      
+      // Fetch all economic indicators in parallel (World Bank + BCRA)
+      const [gdpData, growthData, perCapitaData, inflationData, inflationAltData, unemploymentData, 
+             consumptionData, investmentData, governmentData, exportsData, importsData,
+             cpiData, laborForceData, capitalStockData, broadMoneyData, moneySupplyData, 
+             moneySupplyGrowthData, bankDepositsData, domesticCreditData, reserveMoneyData,
+             exchangeRateData, realExchangeRateData, interestRateData, lendingRateData,
+             currentAccountData, foreignReservesData, capitalFlowsData,
+             // BCRA data
+             bcraMonetaryBase, bcraMoneySupplyM2, bcraMoneySupplyM3, bcraPolicyRate,
+             bcraExchangeRate, bcraBankDeposits, bcraBankCredit, bcraForeignReserves] = await Promise.all([
+        fetchWorldBankData(WB_INDICATORS.GDP, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.GDP_GROWTH, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.GDP_PER_CAPITA, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.INFLATION, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.INFLATION_ALT, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.UNEMPLOYMENT, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.CONSUMPTION, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.INVESTMENT, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.GOVERNMENT, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.EXPORTS, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.IMPORTS, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.CPI, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.LABOR_FORCE, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.CAPITAL_STOCK, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.BROAD_MONEY, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.MONEY_SUPPLY, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.MONEY_SUPPLY_GROWTH, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.BANK_DEPOSITS, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.DOMESTIC_CREDIT, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.RESERVE_MONEY, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.EXCHANGE_RATE, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.REAL_EXCHANGE_RATE, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.INTEREST_RATE, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.LENDING_RATE, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.CURRENT_ACCOUNT, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.FOREIGN_RESERVES, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.CAPITAL_FLOWS, yearsBack, startYear, endYear),
+        // BCRA data
+        fetchBCRAData(BCRA_INDICATORS.MONETARY_BASE, startYear, endYear),
+        fetchBCRAData(BCRA_INDICATORS.MONEY_SUPPLY_M2, startYear, endYear),
+        fetchBCRAData(BCRA_INDICATORS.MONEY_SUPPLY_M3, startYear, endYear),
+        fetchBCRAData(BCRA_INDICATORS.INTEREST_RATE_POLICY, startYear, endYear),
+        fetchBCRAData(BCRA_INDICATORS.EXCHANGE_RATE_USD, startYear, endYear),
+        fetchBCRAData(BCRA_INDICATORS.BANK_DEPOSITS, startYear, endYear),
+        fetchBCRAData(BCRA_INDICATORS.BANK_CREDIT, startYear, endYear),
+        fetchBCRAData(BCRA_INDICATORS.FOREIGN_RESERVES, startYear, endYear)
       ]);
 
-      // Fetch GDP components for AD calculation
-      const [consumptionData, investmentData, governmentData, exportsData, importsData] = await Promise.all([
-        fetchWorldBankData(WB_INDICATORS.CONSUMPTION, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.INVESTMENT, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.GOVERNMENT, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.EXPORTS, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.IMPORTS, yearsBack)
-      ]);
-
-      // Fetch price and production data
-      const [cpiData, deflatorData, laborForceData, capitalStockData] = await Promise.all([
-        fetchWorldBankData(WB_INDICATORS.CPI, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.GDP_DEFLATOR, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.LABOR_FORCE, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.CAPITAL_STOCK, yearsBack)
-      ]);
-
-      // Fetch money supply data for money multiplier calculation
-      const [broadMoneyData, moneySupplyData, moneySupplyGrowthData, bankDepositsData, domesticCreditData, reserveMoneyData] = await Promise.all([
-        fetchWorldBankData(WB_INDICATORS.BROAD_MONEY, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.MONEY_SUPPLY, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.MONEY_SUPPLY_GROWTH, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.BANK_DEPOSITS, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.DOMESTIC_CREDIT, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.RESERVE_MONEY, yearsBack)
-      ]);
-
-      console.log('Raw economic data fetched - GDP components, prices, production factors, and money supply');
+      console.log('Raw economic data fetched');
 
       return {
         gdp: gdpData,
@@ -238,24 +522,36 @@ const ArgentinaMacroProject = () => {
         inflation: inflationData,
         inflationAlt: inflationAltData,
         unemployment: unemploymentData,
-        // GDP Components
         consumption: consumptionData,
         investment: investmentData,
         government: governmentData,
         exports: exportsData,
         imports: importsData,
-        // Price and Production
         cpi: cpiData,
-        deflator: deflatorData,
         laborForce: laborForceData,
         capitalStock: capitalStockData,
-        // Money Supply Data
         broadMoney: broadMoneyData,
         moneySupply: moneySupplyData,
         moneySupplyGrowth: moneySupplyGrowthData,
         bankDeposits: bankDepositsData,
         domesticCredit: domesticCreditData,
-        reserveMoney: reserveMoneyData
+        reserveMoney: reserveMoneyData,
+        exchangeRate: exchangeRateData,
+        realExchangeRate: realExchangeRateData,
+        interestRate: interestRateData,
+        lendingRate: lendingRateData,
+        currentAccount: currentAccountData,
+        foreignReserves: foreignReservesData,
+        capitalFlows: capitalFlowsData,
+        // BCRA data
+        bcraMonetaryBase: bcraMonetaryBase,
+        bcraMoneySupplyM2: bcraMoneySupplyM2,
+        bcraMoneySupplyM3: bcraMoneySupplyM3,
+        bcraPolicyRate: bcraPolicyRate,
+        bcraExchangeRate: bcraExchangeRate,
+        bcraBankDeposits: bcraBankDeposits,
+        bcraBankCredit: bcraBankCredit,
+        bcraForeignReserves: bcraForeignReserves
       };
     } catch (error) {
       console.error('Error fetching economic data:', error);
@@ -264,20 +560,22 @@ const ArgentinaMacroProject = () => {
   }, []);
 
   // Fetch HDI and Social Development data
-  const fetchHDIData = useCallback(async (yearsBack: number) => {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const fetchHDIData = useCallback(async (yearsBack: number, startYear?: number, endYear?: number) => {
     try {
-      console.log('Fetching HDI data for last', yearsBack, 'years...');
+      const periodDesc = startYear && endYear ? `${startYear}-${endYear}` : `last ${yearsBack} years`;
+      console.log('Fetching HDI data for', periodDesc);
       
       // Fetch all HDI-related indicators
       const [lifeExpectancyData, literacyData, schoolingData, gniData, povertyData, giniData, healthExpData, educationExpData] = await Promise.all([
-        fetchWorldBankData(WB_INDICATORS.LIFE_EXPECTANCY, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.EDUCATION_INDEX, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.MEAN_YEARS_SCHOOL, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.GNI_PER_CAPITA, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.POVERTY_HEADCOUNT, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.GINI_INDEX, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.HEALTH_EXPENDITURE, yearsBack),
-        fetchWorldBankData(WB_INDICATORS.EDUCATION_EXPENDITURE, yearsBack)
+        fetchWorldBankData(WB_INDICATORS.LIFE_EXPECTANCY, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.EDUCATION_INDEX, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.MEAN_YEARS_SCHOOL, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.GNI_PER_CAPITA, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.POVERTY_HEADCOUNT, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.GINI_INDEX, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.HEALTH_EXPENDITURE, yearsBack, startYear, endYear),
+        fetchWorldBankData(WB_INDICATORS.EDUCATION_EXPENDITURE, yearsBack, startYear, endYear)
       ]);
 
       console.log('Raw HDI component data fetched');
@@ -319,8 +617,8 @@ const ArgentinaMacroProject = () => {
         // Multiplier = Total Money / Monetary Base
         // Estimate monetary base from reserve requirements and banking ratios
         
-        const creditToGdpRatio = domesticCredit / 100; // Convert percentage
-        const moneyToGdpRatio = moneySupply / 100; // Convert percentage
+        // const creditToGdpRatio = domesticCredit / 100; // Convert percentage
+        // const moneyToGdpRatio = moneySupply / 100; // Convert percentage
         
         // Argentina's reserve requirement is typically 10-15% during stable periods, higher during crisis
         let estimatedReserveRatio = 0.12; // 12% base rate
@@ -397,19 +695,22 @@ const ArgentinaMacroProject = () => {
   // Simplified data processing from World Bank
   const processEconomicData = useCallback((
     rawData: any,
-    yearsBack: number
+    yearsBack: number,
+    customStartYear?: number,
+    customEndYear?: number
   ): { gdpData: ProcessedDataPoint[], inflationData: ProcessedDataPoint[] } => {
     const currentYear = new Date().getFullYear();
-    const startYear = currentYear - yearsBack;
+    const startYear = customStartYear || (currentYear - yearsBack);
+    const endYear = customEndYear || currentYear;
     const years: { [key: number]: ProcessedDataPoint } = {};
     
-    console.log('Processing data for years:', startYear, 'to', currentYear);
+    console.log('Processing data for years:', startYear, 'to', endYear, '(custom period:', !!customStartYear, ')');
     
     // Process GDP data
     rawData.gdp.forEach((item: WorldBankDataPoint) => {
       if (item && item.date && item.value !== null) {
         const year = parseInt(item.date);
-        if (year >= startYear) {
+        if (year >= startYear && year <= endYear) {
           if (!years[year]) years[year] = { year };
           years[year].gdp = (item.value! / 1e9).toFixed(1);
         }
@@ -420,7 +721,7 @@ const ArgentinaMacroProject = () => {
     rawData.growth.forEach((item: WorldBankDataPoint) => {
       if (item && item.date && item.value !== null) {
         const year = parseInt(item.date);
-        if (year >= startYear) {
+        if (year >= startYear && year <= endYear) {
           if (!years[year]) years[year] = { year };
           years[year].growth = parseFloat(item.value!.toString()).toFixed(1);
         }
@@ -431,7 +732,7 @@ const ArgentinaMacroProject = () => {
     rawData.perCapita.forEach((item: WorldBankDataPoint) => {
       if (item && item.date && item.value !== null) {
         const year = parseInt(item.date);
-        if (year >= startYear) {
+        if (year >= startYear && year <= endYear) {
           if (!years[year]) years[year] = { year };
           years[year].gdpPerCapita = Math.round(item.value!);
         }
@@ -442,7 +743,7 @@ const ArgentinaMacroProject = () => {
     rawData.inflation.forEach((item: WorldBankDataPoint) => {
       if (item && item.date && item.value !== null) {
         const year = parseInt(item.date);
-        if (year >= startYear) {
+        if (year >= startYear && year <= endYear) {
           if (!years[year]) years[year] = { year };
           years[year].inflation = parseFloat(item.value!.toString()).toFixed(1);
           console.log(`Inflation for ${year}: ${years[year].inflation}%`);
@@ -454,7 +755,7 @@ const ArgentinaMacroProject = () => {
     rawData.inflationAlt.forEach((item: WorldBankDataPoint) => {
       if (item && item.date && item.value !== null) {
         const year = parseInt(item.date);
-        if (year >= startYear && (!years[year] || !years[year].inflation)) {
+        if (year >= startYear && year <= endYear && (!years[year] || !years[year].inflation)) {
           if (!years[year]) years[year] = { year };
           years[year].inflation = parseFloat(item.value!.toString()).toFixed(1);
           console.log(`Alternative inflation for ${year}: ${years[year].inflation}%`);
@@ -466,7 +767,7 @@ const ArgentinaMacroProject = () => {
     rawData.unemployment.forEach((item: WorldBankDataPoint) => {
       if (item && item.date && item.value !== null) {
         const year = parseInt(item.date);
-        if (year >= startYear) {
+        if (year >= startYear && year <= endYear) {
           if (!years[year]) years[year] = { year };
           years[year].unemployment = parseFloat(item.value!.toString()).toFixed(1);
         }
@@ -485,7 +786,7 @@ const ArgentinaMacroProject = () => {
       rawData.moneySupply.forEach((item: WorldBankDataPoint) => {
         if (item && item.date && item.value !== null) {
           const year = parseInt(item.date);
-          if (year >= startYear) {
+          if (year >= startYear && year <= endYear) {
             moneySupplyByYear[year] = item.value;
           }
         }
@@ -496,7 +797,7 @@ const ArgentinaMacroProject = () => {
       rawData.bankDeposits.forEach((item: WorldBankDataPoint) => {
         if (item && item.date && item.value !== null) {
           const year = parseInt(item.date);
-          if (year >= startYear) {
+          if (year >= startYear && year <= endYear) {
             bankDepositsByYear[year] = item.value;
           }
         }
@@ -507,7 +808,7 @@ const ArgentinaMacroProject = () => {
       rawData.broadMoney.forEach((item: WorldBankDataPoint) => {
         if (item && item.date && item.value !== null) {
           const year = parseInt(item.date);
-          if (year >= startYear) {
+          if (year >= startYear && year <= endYear) {
             broadMoneyByYear[year] = item.value;
           }
         }
@@ -518,7 +819,7 @@ const ArgentinaMacroProject = () => {
       rawData.domesticCredit.forEach((item: WorldBankDataPoint) => {
         if (item && item.date && item.value !== null) {
           const year = parseInt(item.date);
-          if (year >= startYear) {
+          if (year >= startYear && year <= endYear) {
             domesticCreditByYear[year] = item.value;
           }
         }
@@ -529,14 +830,146 @@ const ArgentinaMacroProject = () => {
       rawData.reserveMoney.forEach((item: WorldBankDataPoint) => {
         if (item && item.date && item.value !== null) {
           const year = parseInt(item.date);
-          if (year >= startYear) {
+          if (year >= startYear && year <= endYear) {
             reserveMoneyByYear[year] = item.value;
           }
         }
       });
     }
 
-    // Calculate money multiplier for each year
+    // Process Exchange Rate data
+    rawData.exchangeRate?.forEach((item: WorldBankDataPoint) => {
+      if (item && item.date && item.value !== null) {
+        const year = parseInt(item.date);
+        if (year >= startYear && year <= endYear) {
+          if (!years[year]) years[year] = { year };
+          years[year].exchangeRate = parseFloat(item.value!.toString());
+        }
+      }
+    });
+
+    // Process Real Exchange Rate data
+    rawData.realExchangeRate?.forEach((item: WorldBankDataPoint) => {
+      if (item && item.date && item.value !== null) {
+        const year = parseInt(item.date);
+        if (year >= startYear && year <= endYear) {
+          if (!years[year]) years[year] = { year };
+          years[year].realExchangeRate = parseFloat(item.value!.toString());
+        }
+      }
+    });
+
+    // Process Interest Rate data
+    rawData.interestRate?.forEach((item: WorldBankDataPoint) => {
+      if (item && item.date && item.value !== null) {
+        const year = parseInt(item.date);
+        if (year >= startYear && year <= endYear) {
+          if (!years[year]) years[year] = { year };
+          years[year].interestRate = parseFloat(item.value!.toString());
+        }
+      }
+    });
+
+    // Process Lending Rate data
+    rawData.lendingRate?.forEach((item: WorldBankDataPoint) => {
+      if (item && item.date && item.value !== null) {
+        const year = parseInt(item.date);
+        if (year >= startYear && year <= endYear) {
+          if (!years[year]) years[year] = { year };
+          years[year].lendingRate = parseFloat(item.value!.toString());
+        }
+      }
+    });
+
+    // Process Current Account data
+    rawData.currentAccount?.forEach((item: WorldBankDataPoint) => {
+      if (item && item.date && item.value !== null) {
+        const year = parseInt(item.date);
+        if (year >= startYear && year <= endYear) {
+          if (!years[year]) years[year] = { year };
+          years[year].currentAccount = parseFloat(item.value!.toString());
+        }
+      }
+    });
+
+    // Process Foreign Reserves data
+    rawData.foreignReserves?.forEach((item: WorldBankDataPoint) => {
+      if (item && item.date && item.value !== null) {
+        const year = parseInt(item.date);
+        if (year >= startYear && year <= endYear) {
+          if (!years[year]) years[year] = { year };
+          years[year].foreignReserves = parseFloat((item.value! / 1e9).toString()); // Convert to billions
+        }
+      }
+    });
+
+    // Process Capital Flows data
+    rawData.capitalFlows?.forEach((item: WorldBankDataPoint) => {
+      if (item && item.date && item.value !== null) {
+        const year = parseInt(item.date);
+        if (year >= startYear && year <= endYear) {
+          if (!years[year]) years[year] = { year };
+          years[year].capitalFlows = parseFloat(item.value!.toString());
+        }
+      }
+    });
+
+    // Process BCRA data for enhanced monetary indicators
+    const processBCRAData = (bcraData: BCRADataPoint[], dataType: string) => {
+      if (!bcraData || !Array.isArray(bcraData)) return {};
+      
+      const bcraByYear: { [key: number]: number } = {};
+      bcraData.forEach((item: BCRADataPoint) => {
+        if (item && item.fecha && item.valor !== null) {
+          // BCRA dates are in YYYY-MM-DD format
+          const year = parseInt(item.fecha.split('-')[0]);
+          if (year >= startYear && year <= endYear) {
+            // Use the latest value for each year (or average if multiple)
+            if (!bcraByYear[year]) {
+              bcraByYear[year] = item.valor;
+            } else {
+              // Average multiple values within the same year
+              bcraByYear[year] = (bcraByYear[year] + item.valor) / 2;
+            }
+          }
+        }
+      });
+      
+      console.log(`BCRA ${dataType} data:`, bcraByYear);
+      return bcraByYear;
+    };
+
+    // Process all BCRA data
+    const bcraMonetaryBaseByYear = processBCRAData(rawData.bcraMonetaryBase, 'Monetary Base');
+    const bcraM2ByYear = processBCRAData(rawData.bcraMoneySupplyM2, 'M2 Money Supply');
+    const bcraM3ByYear = processBCRAData(rawData.bcraMoneySupplyM3, 'M3 Money Supply');
+    const bcraPolicyRateByYear = processBCRAData(rawData.bcraPolicyRate, 'Policy Rate');
+    const bcraExchangeRateByYear = processBCRAData(rawData.bcraExchangeRate, 'Exchange Rate');
+    const bcraBankDepositsByYear = processBCRAData(rawData.bcraBankDeposits, 'Bank Deposits');
+    const bcraBankCreditByYear = processBCRAData(rawData.bcraBankCredit, 'Bank Credit');
+    const bcraForeignReservesByYear = processBCRAData(rawData.bcraForeignReserves, 'Foreign Reserves');
+
+    // Integrate BCRA data with existing data (BCRA data takes precedence when available)
+    Object.keys(years).forEach(yearStr => {
+      const year = parseInt(yearStr);
+      
+      // Update exchange rate with BCRA data if available
+      if (bcraExchangeRateByYear[year]) {
+        years[year].exchangeRate = bcraExchangeRateByYear[year];
+      }
+      
+      // Update interest rate with BCRA policy rate if available
+      if (bcraPolicyRateByYear[year]) {
+        years[year].interestRate = bcraPolicyRateByYear[year];
+      }
+      
+      // Update foreign reserves with BCRA data if available
+      if (bcraForeignReservesByYear[year]) {
+        years[year].foreignReserves = bcraForeignReservesByYear[year] / 1e9; // Convert to billions
+      }
+    });
+
+    // Calculate enhanced money multiplier using BCRA data when available
     Object.keys(years).forEach(yearStr => {
       const year = parseInt(yearStr);
       const yearData = years[year];
@@ -545,19 +978,34 @@ const ArgentinaMacroProject = () => {
       const inflationValue = yearData.inflation ? parseFloat(yearData.inflation) : null;
       const unemploymentValue = yearData.unemployment ? parseFloat(yearData.unemployment) : null;
       
-      const moneyMultiplier = calculateMoneyMultiplier(
-        broadMoneyByYear[year],
-        moneySupplyByYear[year],
-        gdpValue,
-        bankDepositsByYear[year],
-        inflationValue,
-        unemploymentValue,
-        domesticCreditByYear[year],
-        reserveMoneyByYear[year]
-      );
+      // Use BCRA data for money multiplier calculation when available
+      const monetaryBase = bcraMonetaryBaseByYear[year] || null;
+      const m2Supply = bcraM2ByYear[year] || moneySupplyByYear[year];
+      const bankDeposits = bcraBankDepositsByYear[year] || bankDepositsByYear[year];
+      const bankCredit = bcraBankCreditByYear[year] || domesticCreditByYear[year];
+      
+      // Enhanced money multiplier calculation with BCRA data
+      let moneyMultiplier;
+      if (monetaryBase && m2Supply) {
+        // Direct calculation: M2 / Monetary Base
+        moneyMultiplier = m2Supply / monetaryBase;
+        console.log(`Direct BCRA money multiplier for ${year}: ${moneyMultiplier.toFixed(2)}x (M2: ${m2Supply}, Base: ${monetaryBase})`);
+      } else {
+        // Fallback to World Bank estimation method
+        moneyMultiplier = calculateMoneyMultiplier(
+          broadMoneyByYear[year],
+          m2Supply,
+          gdpValue,
+          bankDeposits,
+          inflationValue,
+          unemploymentValue,
+          bankCredit,
+          reserveMoneyByYear[year]
+        );
+      }
       
       years[year].moneyMultiplier = parseFloat(moneyMultiplier.toFixed(1));
-      console.log(`Money Multiplier for ${year}: ${years[year].moneyMultiplier}x`);
+      console.log(`Final Money Multiplier for ${year}: ${years[year].moneyMultiplier}x`);
     });
     
     const sortedData = Object.values(years).sort((a, b) => a.year - b.year);
@@ -575,18 +1023,19 @@ const ArgentinaMacroProject = () => {
   }, []);
 
   // Process HDI data and calculate estimated HDI
-  const processHDIData = useCallback((rawHDIData: any, yearsBack: number): HDIDataPoint[] => {
+  const processHDIData = useCallback((rawHDIData: any, yearsBack: number, customStartYear?: number, customEndYear?: number): HDIDataPoint[] => {
     const currentYear = new Date().getFullYear();
-    const startYear = currentYear - yearsBack;
+    const startYear = customStartYear || (currentYear - yearsBack);
+    const endYear = customEndYear || currentYear;
     const years: { [key: number]: HDIDataPoint } = {};
     
-    console.log('Processing HDI data for years:', startYear, 'to', currentYear);
+    console.log('Processing HDI data for years:', startYear, 'to', endYear, '(custom period:', !!customStartYear, ')');
     
     // Process Life Expectancy
     rawHDIData.lifeExpectancy.forEach((item: WorldBankDataPoint) => {
       if (item && item.date && item.value !== null) {
         const year = parseInt(item.date);
-        if (year >= startYear) {
+        if (year >= startYear && year <= endYear) {
           if (!years[year]) years[year] = { year };
           years[year].lifeExpectancy = parseFloat(item.value!.toString());
         }
@@ -597,7 +1046,7 @@ const ArgentinaMacroProject = () => {
     rawHDIData.literacy.forEach((item: WorldBankDataPoint) => {
       if (item && item.date && item.value !== null) {
         const year = parseInt(item.date);
-        if (year >= startYear) {
+        if (year >= startYear && year <= endYear) {
           if (!years[year]) years[year] = { year };
           years[year].literacyRate = parseFloat(item.value!.toString());
         }
@@ -608,7 +1057,7 @@ const ArgentinaMacroProject = () => {
     rawHDIData.schooling.forEach((item: WorldBankDataPoint) => {
       if (item && item.date && item.value !== null) {
         const year = parseInt(item.date);
-        if (year >= startYear) {
+        if (year >= startYear && year <= endYear) {
           if (!years[year]) years[year] = { year };
           years[year].meanYearsSchool = parseFloat(item.value!.toString());
         }
@@ -619,7 +1068,7 @@ const ArgentinaMacroProject = () => {
     rawHDIData.gni.forEach((item: WorldBankDataPoint) => {
       if (item && item.date && item.value !== null) {
         const year = parseInt(item.date);
-        if (year >= startYear) {
+        if (year >= startYear && year <= endYear) {
           if (!years[year]) years[year] = { year };
           years[year].gniPerCapita = parseFloat(item.value!.toString());
         }
@@ -630,7 +1079,7 @@ const ArgentinaMacroProject = () => {
     rawHDIData.poverty.forEach((item: WorldBankDataPoint) => {
       if (item && item.date && item.value !== null) {
         const year = parseInt(item.date);
-        if (year >= startYear) {
+        if (year >= startYear && year <= endYear) {
           if (!years[year]) years[year] = { year };
           years[year].povertyRate = parseFloat(item.value!.toString());
         }
@@ -641,7 +1090,7 @@ const ArgentinaMacroProject = () => {
     rawHDIData.gini.forEach((item: WorldBankDataPoint) => {
       if (item && item.date && item.value !== null) {
         const year = parseInt(item.date);
-        if (year >= startYear) {
+        if (year >= startYear && year <= endYear) {
           if (!years[year]) years[year] = { year };
           years[year].giniIndex = parseFloat(item.value!.toString());
         }
@@ -652,7 +1101,7 @@ const ArgentinaMacroProject = () => {
     rawHDIData.healthExp.forEach((item: WorldBankDataPoint) => {
       if (item && item.date && item.value !== null) {
         const year = parseInt(item.date);
-        if (year >= startYear) {
+        if (year >= startYear && year <= endYear) {
           if (!years[year]) years[year] = { year };
           years[year].healthExpenditure = parseFloat(item.value!.toString());
         }
@@ -663,7 +1112,7 @@ const ArgentinaMacroProject = () => {
     rawHDIData.educationExp.forEach((item: WorldBankDataPoint) => {
       if (item && item.date && item.value !== null) {
         const year = parseInt(item.date);
-        if (year >= startYear) {
+        if (year >= startYear && year <= endYear) {
           if (!years[year]) years[year] = { year };
           years[year].educationExpenditure = parseFloat(item.value!.toString());
         }
@@ -703,12 +1152,16 @@ const ArgentinaMacroProject = () => {
       
       try {
         // Fetch economic data from World Bank
-        const rawData = await fetchEconomicData(selectedYears);
+        const effectiveYears = getEffectiveYears();
+        const startYear = useCustomPeriod ? getEffectiveStartYear() : undefined;
+        const endYear = useCustomPeriod ? getEffectiveEndYear() : undefined;
+        
+        const rawData = await fetchEconomicData(effectiveYears, startYear, endYear);
         
         console.log('Raw economic data fetched:', rawData);
         
         // Process all economic data
-        const { gdpData, inflationData } = processEconomicData(rawData, selectedYears);
+        const { gdpData, inflationData } = processEconomicData(rawData, effectiveYears, startYear, endYear);
         
         console.log('Final processed GDP data:', gdpData);
         console.log('Final processed inflation data:', inflationData);
@@ -837,20 +1290,25 @@ const ArgentinaMacroProject = () => {
     };
 
     loadData();
-  }, [selectedYears, fetchEconomicData, processEconomicData]); // Re-fetch data when selectedYears changes
+  }, [selectedYears, useCustomPeriod, customStartYear, customEndYear, getEffectiveYears, getEffectiveStartYear, getEffectiveEndYear, fetchEconomicData, processEconomicData]); // Re-fetch data when period changes
 
   // Load HDI data separately to avoid page redirects
   useEffect(() => {
     const loadHDIData = async () => {
       setHdiLoading(true);
       try {
-        console.log('Loading HDI data for', selectedHDIYears, 'years...');
+        const effectiveHDIYears = getEffectiveHDIYears();
+        const startYear = useCustomHDIPeriod ? getEffectiveHDIStartYear() : undefined;
+        const endYear = useCustomHDIPeriod ? getEffectiveHDIEndYear() : undefined;
+        
+        const periodDesc = startYear && endYear ? `${startYear}-${endYear}` : `${selectedHDIYears} years`;
+        console.log('Loading HDI data for', periodDesc);
         
         // Fetch and process HDI data with selected years
-        const rawHDIData = await fetchHDIData(selectedHDIYears);
+        const rawHDIData = await fetchHDIData(effectiveHDIYears, startYear, endYear);
         console.log('Raw HDI data fetched:', rawHDIData);
         
-        const processedHDIData = processHDIData(rawHDIData, selectedHDIYears);
+        const processedHDIData = processHDIData(rawHDIData, effectiveHDIYears, startYear, endYear);
         console.log('Final processed HDI data:', processedHDIData);
         
         setHdiData(processedHDIData);
@@ -874,35 +1332,341 @@ const ArgentinaMacroProject = () => {
     };
 
     loadHDIData();
-  }, [selectedHDIYears, fetchHDIData, processHDIData]); // Re-fetch HDI data when selectedHDIYears changes
+  }, [selectedHDIYears, useCustomHDIPeriod, customHDIStartYear, customHDIEndYear, getEffectiveHDIYears, getEffectiveHDIStartYear, getEffectiveHDIEndYear, fetchHDIData, processHDIData]); // Re-fetch HDI data when period changes
 
 
 
   // Generate dynamic data based on selected year range
-  const generateDynamicData = () => {
-    const currentYear = new Date().getFullYear();
-    const startYear = currentYear - selectedYears;
-    const years = [];
-    
-    for (let year = startYear; year < currentYear; year++) {
-      years.push(year);
-    }
-    
-    return years;
-  };
+  // const generateDynamicData = () => {
+  //   const currentYear = new Date().getFullYear();
+  //   const startYear = currentYear - selectedYears;
+  //   const years = [];
+  //   
+  //   for (let year = startYear; year < currentYear; year++) {
+  //     years.push(year);
+  //   }
+  //   
+  //   return years;
+  // };
 
   // Real-time AD-AS data based on actual World Bank GDP components and production data
-  const generateAdAsData = () => {
+  // This function has been moved to getFilteredAdAsData() and is no longer used directly
+
+  // Dynamic IS-LM data - now uses same analytical approach as traditional view for consistency
+  const generateIsLmData = () => {
     if (!gdpData || gdpData.length === 0) {
       return []; // Return empty if no real data available
     }
 
-    return gdpData.map((gdpItem: ProcessedDataPoint, index: number) => {
+    // Filter out 2024 from IS-LM analysis
+    const filteredGdpData = gdpData.filter(item => item.year !== 2024);
+
+    return filteredGdpData.map((gdpItem: ProcessedDataPoint) => {
+      const year = gdpItem.year;
+      const gdp = parseFloat(gdpItem.gdp || '0'); // GDP in billions
+      const inflation = parseFloat(gdpItem.inflation || '0');
+      const unemployment = parseFloat(gdpItem.unemployment || '0');
+      const growth = parseFloat(gdpItem.growth || '0');
+      
+      // Use same simplified parameters as generateIsLmCurves for consistency
+      const baseConsumptionRatio = 0.65;
+      const adjustedMPC = unemployment > 15 ? baseConsumptionRatio * 0.95 : 
+                         inflation > 50 ? baseConsumptionRatio * 1.05 : baseConsumptionRatio;
+      const taxRate = 0.25; // Tax rate
+      const multiplier = 1 / (1 - adjustedMPC * (1 - taxRate)); // Keynesian multiplier
+      
+      // Use same parameters as dynamic view for consistency
+      const autonomousSpending = gdp * 0.3; // A-bar: autonomous spending (same as dynamic view)
+      const investmentSensitivity = inflation > 20 ? 4 : 2; // b: investment sensitivity (same as dynamic view)
+      const realMoneySupply = gdp * 0.4 * (1 / Math.max(1, inflation / 10)); // Real money supply (same as dynamic view)
+      const moneyDemandIncome = 0.25; // k: income elasticity (same as dynamic view)
+      const moneyDemandInterest = inflation > 30 ? 8 : 15; // h: interest elasticity (same as dynamic view)
+      
+      // Calculate equilibrium analytically (where IS = LM) - SAME AS TRADITIONAL VIEW
+      // IS: i = (A - Y/α)/b
+      // LM: i = (kY - M/P)/h
+      // Set equal: (A - Y/α)/b = (kY - M/P)/h
+      // Solve for Y: Y = (hA + bM/P) / (h/α + bk)
+      
+      const numerator = moneyDemandInterest * autonomousSpending + investmentSensitivity * realMoneySupply;
+      const denominator = moneyDemandInterest / multiplier + investmentSensitivity * moneyDemandIncome;
+      
+      // Debug logging for consistency check
+      console.log(`Dynamic ${year} Parameters:`, {
+        gdp, inflation, unemployment,
+        autonomousSpending, investmentSensitivity, realMoneySupply,
+        moneyDemandIncome, moneyDemandInterest, multiplier,
+        numerator, denominator
+      });
+      
+      // Prevent division by very small numbers - SAME AS CURVES VIEW
+      const equilibriumIncome = denominator > 0.1 ? numerator / denominator : gdp * 0.5;
+      
+      const equilibriumInterestRate = investmentSensitivity > 0 ? 
+        (autonomousSpending - equilibriumIncome / multiplier) / investmentSensitivity : 
+        inflation / 10; // Fallback based on inflation
+      
+      // Apply bounds for visualization - SAME AS CURVES VIEW
+      const income = Math.max(100, Math.min(600, equilibriumIncome));
+      const interestRate = Math.max(0, Math.min(50, equilibriumInterestRate));
+      
+      // Calculate investment and money demand at equilibrium
+      const investment = Math.max(10, gdp * 0.20 - (investmentSensitivity * interestRate));
+      const moneyDemand = Math.max(20, (moneyDemandIncome * income) - (moneyDemandInterest * interestRate));
+      
+      return {
+        year: year,
+        interestRate: Math.round(interestRate * 10) / 10,
+        income: Math.round(income * 10) / 10,
+        investment: Math.round(investment * 10) / 10,
+        money: Math.round(moneyDemand * 10) / 10,
+        // Additional data for tooltips
+        realGDP: gdp,
+        inflationRate: inflation,
+        unemploymentRate: unemployment,
+        growthRate: growth,
+        nominalRate: Math.round(interestRate * 10) / 10,
+        realRate: Math.round((interestRate - inflation) * 10) / 10
+      };
+    });
+  };
+
+  // Generate IS and LM curve data for selected year
+  const generateIsLmCurves = (selectedYear: number) => {
+    if (!gdpData || gdpData.length === 0) return { isData: [], lmData: [], equilibrium: null };
+    
+    // Exclude 2024 from IS-LM analysis
+    if (selectedYear === 2024) {
+      console.log('2024 excluded from IS-LM analysis');
+      return { isData: [], lmData: [], equilibrium: null };
+    }
+    
+    // Try to find exact year data
+    let yearData = gdpData.find(d => d.year === selectedYear);
+    let gdp, inflation, unemployment;
+    let isHistoricalEstimate = false;
+    
+    if (yearData) {
+      // Use actual data
+      gdp = parseFloat(yearData.gdp || '0');
+      inflation = parseFloat(yearData.inflation || '0');
+      unemployment = parseFloat(yearData.unemployment || '0');
+    } else {
+      // Generate historical estimates for missing years
+      isHistoricalEstimate = true;
+      console.log(`No data for ${selectedYear}, generating historical estimate`);
+      
+      // Historical economic estimates for Argentina based on known periods
+      if (selectedYear >= 2010) {
+        // Recent period - use latest available data
+        const latestData = gdpData[gdpData.length - 1] || { gdp: '630', inflation: '50', unemployment: '8' };
+        gdp = parseFloat(latestData.gdp || '630');
+        inflation = parseFloat(latestData.inflation || '50');
+        unemployment = parseFloat(latestData.unemployment || '8');
+      } else if (selectedYear >= 2002) {
+        // Post-convertibility period (2002-2009): Recovery and growth
+        const baseGdp = 200; // Starting low after 2001 crisis
+        const growthFactor = (selectedYear - 2002) * 15; // ~15B per year growth
+        gdp = baseGdp + growthFactor;
+        inflation = selectedYear < 2007 ? 10 + (selectedYear - 2002) * 3 : 25; // Rising inflation
+        unemployment = Math.max(8, 20 - (selectedYear - 2002) * 1.5); // Declining from crisis peak
+      } else if (selectedYear >= 1992) {
+        // Convertibility period (1992-2001): Stable but ending in crisis
+        const baseGdp = 200;
+        const growthFactor = (selectedYear - 1992) * 8; // Moderate growth
+        gdp = baseGdp + growthFactor;
+        inflation = selectedYear < 1999 ? 2 : 5 + (selectedYear - 1999) * 5; // Low then rising
+        unemployment = selectedYear < 1995 ? 12 : 15 + (selectedYear - 1995) * 0.5; // Rising toward crisis
+      } else if (selectedYear >= 1985) {
+        // Hyperinflation period (1985-1991): Economic instability
+        gdp = 150 + (selectedYear - 1985) * 5; // Slow growth
+        inflation = selectedYear < 1989 ? 100 + (selectedYear - 1985) * 200 : 1000; // Hyperinflation peak
+        unemployment = 10 + (selectedYear - 1985) * 1; // Rising unemployment
+      } else {
+        // Pre-1985: Early democracy period
+        gdp = 120 + (selectedYear - 1975) * 3; // Very slow growth
+        inflation = 50 + (selectedYear - 1975) * 20; // High and rising inflation
+        unemployment = 8 + (selectedYear - 1975) * 0.3; // Gradual increase
+      }
+    }
+    
+    // Economic parameters for the selected year using actual Argentina data
+    const baseConsumptionRatio = 0.65;
+    const adjustedMPC = unemployment > 15 ? baseConsumptionRatio * 0.95 : 
+                       inflation > 50 ? baseConsumptionRatio * 1.05 : baseConsumptionRatio;
+    const taxRate = 0.25;
+    const multiplier = 1 / (1 - adjustedMPC * (1 - taxRate));
+    
+    // Use same parameters as dynamic view for consistency
+    const autonomousSpending = gdp * 0.3; // A-bar: autonomous spending (same as dynamic view)
+    const investmentSensitivity = inflation > 20 ? 4 : 2; // b: investment sensitivity (same as dynamic view)
+    const realMoneySupply = gdp * 0.4 * (1 / Math.max(1, inflation / 10)); // Real money supply (same as dynamic view)
+    const moneyDemandIncome = 0.25; // k: income elasticity (same as dynamic view)
+    const moneyDemandInterest = inflation > 30 ? 8 : 15; // h: interest elasticity (same as dynamic view)
+    
+    // Calculate equilibrium analytically (where IS = LM)
+    // IS: i = (A - Y/α)/b
+    // LM: i = (kY - M/P)/h
+    // Set equal: (A - Y/α)/b = (kY - M/P)/h
+    // Solve for Y: h(A - Y/α) = b(kY - M/P)
+    // hA - hY/α = bkY - bM/P
+    // hA + bM/P = hY/α + bkY
+    // hA + bM/P = Y(h/α + bk)
+    // Y = (hA + bM/P) / (h/α + bk)
+    
+    // Debug logging for parameter validation
+    console.log(`${selectedYear} Parameters:`, {
+      gdp, inflation, unemployment,
+      autonomousSpending, investmentSensitivity, realMoneySupply,
+      moneyDemandIncome, moneyDemandInterest, multiplier
+    });
+    
+    const numerator = moneyDemandInterest * autonomousSpending + investmentSensitivity * realMoneySupply;
+    const denominator = moneyDemandInterest / multiplier + investmentSensitivity * moneyDemandIncome;
+    
+    console.log(`${selectedYear} Equilibrium calc:`, { numerator, denominator });
+    
+    // Prevent division by very small numbers
+    const rawEquilibriumIncome = denominator > 0.1 ? numerator / denominator : gdp * 0.5;
+    
+    // Apply same bounds as curve generation
+    const equilibriumIncome = Math.max(100, Math.min(600, rawEquilibriumIncome));
+    
+    // Calculate equilibrium interest rate using the SAME formulas as curves
+    // Use IS curve formula: i = (A - Y/α)/b
+    const rawEquilibriumInterestRate = investmentSensitivity > 0 ? 
+      (autonomousSpending - equilibriumIncome / multiplier) / investmentSensitivity : 
+      inflation / 10; // Fallback based on inflation
+    
+    // Apply same non-negative constraint as curve generation
+    const equilibriumInterestRate = Math.max(0, Math.min(50, rawEquilibriumInterestRate));
+    
+    // Verify with LM curve: i = (kY - M/P)/h
+    const lmVerification = (moneyDemandIncome * equilibriumIncome - realMoneySupply) / moneyDemandInterest;
+    const lmInterestRate = Math.max(0, lmVerification);
+    
+    console.log(`${selectedYear} Equilibrium verification:`, {
+      income: equilibriumIncome,
+      isRate: equilibriumInterestRate,
+      lmRate: lmInterestRate,
+      difference: Math.abs(equilibriumInterestRate - lmInterestRate),
+      minIncome: Math.max(100, equilibriumIncome - 250),
+      maxIncome: Math.min(600, equilibriumIncome + 250)
+    });
+    
+    const equilibrium = {
+      income: Math.round(equilibriumIncome),
+      interestRate: Math.round(equilibriumInterestRate * 10) / 10,
+      year: selectedYear,
+      realGDP: gdp,
+      inflationRate: inflation,
+      unemploymentRate: unemployment,
+      isHistoricalEstimate: isHistoricalEstimate
+    };
+    
+    const isData = [];
+    const lmData = [];
+    
+    // Generate IS and LM curves with extended range for better visualization
+    const minIncome = Math.max(100, equilibriumIncome - 250);
+    const maxIncome = Math.min(600, equilibriumIncome + 250);
+    
+    for (let income = minIncome; income <= maxIncome; income += 2) {
+      // IS curve: solve for interest rate given income
+      // Y = α(A - bi) => i = (A - Y/α)/b
+      const isInterestRate = (autonomousSpending - income / multiplier) / investmentSensitivity;
+      
+      // Always add IS data points (even if interest rate is negative, we'll handle it in display)
+      isData.push({
+        income: Math.round(income),
+        interestRate: Math.round(Math.max(0, isInterestRate) * 10) / 10, // Round same as equilibrium
+        curve: 'IS',
+        year: selectedYear
+      });
+      
+      // LM curve: i = (1/h)(kY - M/P) 
+      const lmInterestRate = (moneyDemandIncome * income - realMoneySupply) / moneyDemandInterest;
+      
+      // Always add LM data points (even if interest rate is negative, we'll handle it in display)
+      lmData.push({
+        income: Math.round(income),
+        interestRate: Math.round(Math.max(0, lmInterestRate) * 10) / 10, // Round same as equilibrium
+        curve: 'LM',
+        year: selectedYear
+      });
+    }
+
+    return { isData, lmData, equilibrium };
+  };
+
+  // Comprehensive major events database
+  const getAllMajorEvents = () => {
+    return [
+      { year: 1983, event: "Return to Democracy", description: "End of military dictatorship, new economic challenges" },
+      { year: 1985, event: "Austral Plan", description: "Currency reform to combat hyperinflation" },
+      { year: 1989, event: "Hyperinflation Crisis", description: "Inflation peaks at over 3000%, economic chaos" },
+      { year: 1991, event: "Convertibility Plan", description: "Currency board system, peso pegged to USD" },
+      { year: 1995, event: "Tequila Crisis", description: "Mexican crisis spillover, banking sector stress" },
+      { year: 1998, event: "Brazilian Devaluation", description: "Regional crisis impact on Argentina" },
+      { year: 2001, event: "Economic Collapse", description: "End of convertibility, sovereign default" },
+      { year: 2002, event: "Peso Devaluation", description: "Currency crisis, banking system collapse" },
+      { year: 2003, event: "Kirchner Presidency", description: "Debt restructuring, economic recovery begins" },
+      { year: 2008, event: "Global Financial Crisis", description: "Commodity price volatility, capital flight" },
+      { year: 2011, event: "Capital Controls", description: "Foreign exchange restrictions implemented" },
+      { year: 2014, event: "Sovereign Default", description: "Second default in 13 years, holdout creditors" },
+      { year: 2015, event: "Macri Administration", description: "Market-friendly policies, gradual adjustment" },
+    { year: 2018, event: "Currency Crisis", description: "Peso devaluation, IMF bailout package" },
+    { year: 2019, event: "Economic Recession", description: "GDP contraction, rising unemployment" },
+    { year: 2020, event: "COVID-19 Pandemic", description: "Lockdowns, -9.9% GDP growth" },
+    { year: 2021, event: "Economic Recovery", description: "Strong rebound with 10.7% growth" },
+      { year: 2022, event: "Debt Restructuring", description: "IMF agreement, fiscal consolidation" },
+      { year: 2023, event: "Hyperinflation Crisis", description: "135% inflation rate peak, political uncertainty" },
+      { year: 2024, event: "Milei Administration", description: "Libertarian policies, dollarization debate" }
+    ];
+  };
+
+  // Filter major events based on selected year range
+  const getMajorEventsForRange = () => {
+    const allEvents = getAllMajorEvents();
+    
+    if (useCustomPeriod) {
+      const startYear = getEffectiveStartYear();
+      const endYear = getEffectiveEndYear();
+      return allEvents.filter(event => event.year >= startYear && event.year <= endYear);
+    } else {
+      const currentYear = new Date().getFullYear();
+      const startYear = currentYear - selectedYears;
+      return allEvents.filter(event => event.year >= startYear && event.year < currentYear);
+    }
+  };
+
+  // Generate dynamic data - filter by custom period if selected
+  const getFilteredGdpData = () => {
+    if (!gdpData || gdpData.length === 0) return [];
+    
+    if (useCustomPeriod) {
+      const startYear = getEffectiveStartYear();
+      const endYear = getEffectiveEndYear();
+      return gdpData.filter(item => item.year >= startYear && item.year <= endYear);
+    } else {
+      const currentYear = new Date().getFullYear();
+      const startYear = currentYear - selectedYears;
+      return gdpData.filter(item => item.year >= startYear);
+    }
+  };
+
+  const getFilteredAdAsData = () => {
+    const filteredGdpData = getFilteredGdpData();
+    if (!filteredGdpData || filteredGdpData.length === 0) {
+      return []; // Return empty if no filtered data available
+    }
+
+    return filteredGdpData.map((gdpItem: ProcessedDataPoint, index: number) => {
       const year = gdpItem.year;
       
       // Get actual World Bank data for this year (check if economicData is available)
       let consumption = 0, investment = 0, government = 0, exports = 0, imports = 0;
-      let cpi = 100, laborForce = 0, capitalStock = 0;
+      // let cpi = 100, laborForce = 0, capitalStock = 0;
       
       // Parse real economic data
       const gdp = parseFloat(gdpItem.gdp || '0'); // GDP is already in billions
@@ -1023,196 +1787,26 @@ const ArgentinaMacroProject = () => {
     });
   };
 
-  // Dynamic IS-LM data (remains conceptual but adjusts based on recent economic conditions)
-  const generateIsLmData = () => {
-    if (!gdpData || gdpData.length === 0) {
-      return []; // Return empty if no real data available
-    }
-
-    return gdpData.map((gdpItem: ProcessedDataPoint) => {
-      const year = gdpItem.year;
-      const gdp = parseFloat(gdpItem.gdp || '0'); // GDP in billions
-      const inflation = parseFloat(gdpItem.inflation || '0');
-      const unemployment = parseFloat(gdpItem.unemployment || '0');
-      const growth = parseFloat(gdpItem.growth || '0');
-      
-      // Calculate real interest rate using economic theory
-      // Base interest rate + risk premium + inflation expectations
-      let nominalInterestRate = 5; // Base rate
-      
-      // Add inflation premium (Fisher equation: i = r + πe)
-      nominalInterestRate += inflation * 0.8; // Partial pass-through
-      
-      // Add country risk premium based on economic conditions
-      if (inflation > 50) nominalInterestRate += 15; // Hyperinflation premium
-      else if (inflation > 20) nominalInterestRate += 8; // High inflation premium
-      else if (inflation > 10) nominalInterestRate += 3; // Moderate inflation premium
-      
-      // Add unemployment risk (higher unemployment = lower rates due to recession)
-      if (unemployment > 15) nominalInterestRate -= 5;
-      else if (unemployment > 10) nominalInterestRate -= 2;
-      
-      // Calculate income (Y) based on actual GDP, scaled for visualization
-      const income = Math.max(300, Math.min(800, gdp * 0.8 + 200));
-      
-      // Calculate investment sensitivity to interest rates (I = I₀ - bi)
-      // Higher interest rates reduce investment
-      const baseInvestment = gdp * 0.20; // 20% of GDP baseline
-      const interestSensitivity = 2; // Investment sensitivity parameter
-      const investment = Math.max(10, baseInvestment - (interestSensitivity * nominalInterestRate));
-      
-      // Calculate money demand based on economic conditions
-      // L(i,Y) = kY - hi where k=money demand coefficient, h=interest sensitivity
-      const moneyDemandCoeff = inflation > 30 ? 0.4 : 0.25; // Higher during high inflation
-      const interestElasticity = inflation > 30 ? 0.5 : 1.0; // Lower sensitivity during crisis
-      const moneyDemand = Math.max(20, (moneyDemandCoeff * income) - (interestElasticity * nominalInterestRate));
-      
-      return {
-        year: year,
-        interestRate: Math.max(0, Math.min(100, nominalInterestRate)),
-        income: Math.round(income * 10) / 10,
-        investment: Math.round(investment * 10) / 10,
-        money: Math.round(moneyDemand * 10) / 10,
-        // Additional data for tooltips
-        realGDP: gdp,
-        inflationRate: inflation,
-        unemploymentRate: unemployment,
-        growthRate: growth,
-        nominalRate: Math.round(nominalInterestRate * 10) / 10,
-        realRate: Math.round((nominalInterestRate - inflation) * 10) / 10
-      };
-    });
-  };
-
-  // Generate IS and LM curve data for selected year
-  const generateIsLmCurves = (selectedYear: number) => {
-    if (!gdpData || gdpData.length === 0) return { isData: [], lmData: [], equilibrium: null };
-    
-    const yearData = gdpData.find(d => d.year === selectedYear) || gdpData[gdpData.length - 1];
-    const gdp = parseFloat(yearData.gdp || '0');
-    const inflation = parseFloat(yearData.inflation || '0');
-    const unemployment = parseFloat(yearData.unemployment || '0');
-    
-    // Economic parameters for the selected year
-    const autonomousSpending = gdp * 0.3; // A-bar: autonomous spending
-    const mpc = 0.65; // Marginal propensity to consume
-    const taxRate = 0.25; // Tax rate
-    const investmentSensitivity = inflation > 20 ? 4 : 2; // b: investment sensitivity to interest rates
-    const multiplier = 1 / (1 - mpc * (1 - taxRate)); // Keynesian multiplier
-    
-    // Money market parameters
-    const realMoneySupply = gdp * 0.4 * (1 / Math.max(1, inflation / 10)); // Real money supply adjusted for inflation
-    const moneyDemandIncome = 0.25; // k: income elasticity of money demand
-    const moneyDemandInterest = inflation > 30 ? 8 : 15; // h: interest elasticity of money demand
-    
-    // Calculate equilibrium analytically (where IS = LM)
-    // IS: i = (A - Y/α)/b
-    // LM: i = (kY - M/P)/h
-    // Set equal: (A - Y/α)/b = (kY - M/P)/h
-    // Solve for Y: h(A - Y/α) = b(kY - M/P)
-    // hA - hY/α = bkY - bM/P
-    // hA + bM/P = hY/α + bkY
-    // hA + bM/P = Y(h/α + bk)
-    // Y = (hA + bM/P) / (h/α + bk)
-    
-    const equilibriumIncome = (moneyDemandInterest * autonomousSpending + investmentSensitivity * realMoneySupply) / 
-                             (moneyDemandInterest / multiplier + investmentSensitivity * moneyDemandIncome);
-    
-    const equilibriumInterestRate = (autonomousSpending - equilibriumIncome / multiplier) / investmentSensitivity;
-    
-    const equilibrium = {
-      income: Math.max(200, Math.min(800, equilibriumIncome)),
-      interestRate: Math.max(0, Math.min(50, equilibriumInterestRate)),
-      year: selectedYear,
-      realGDP: gdp,
-      inflationRate: inflation,
-      unemploymentRate: unemployment
-    };
-    
-    const isData = [];
-    const lmData = [];
-    
-    // Generate IS curve: Y = α(A - bi) where α is multiplier
-    for (let income = 200; income <= 800; income += 10) {
-      // IS curve: solve for interest rate given income
-      // Y = α(A - bi) => i = (A - Y/α)/b
-      const interestRate = Math.max(0, (autonomousSpending - income / multiplier) / investmentSensitivity);
-      
-      if (interestRate <= 50) { // Only show reasonable interest rates
-        isData.push({
-          income: income,
-          interestRate: interestRate,
-          curve: 'IS',
-          year: selectedYear
-        });
-      }
-    }
-    
-    // Generate LM curve: i = (1/h)(kY - M/P) 
-    for (let income = 200; income <= 800; income += 10) {
-      const interestRate = Math.max(0, (moneyDemandIncome * income - realMoneySupply) / moneyDemandInterest);
-      
-      if (interestRate <= 50) { // Only show reasonable interest rates
-        lmData.push({
-          income: income,
-          interestRate: interestRate,
-          curve: 'LM',
-          year: selectedYear
-        });
-      }
-    }
-    
-    return { isData, lmData, equilibrium };
-  };
-
-  // Comprehensive major events database
-  const getAllMajorEvents = () => {
-    return [
-      { year: 1983, event: "Return to Democracy", description: "End of military dictatorship, new economic challenges" },
-      { year: 1985, event: "Austral Plan", description: "Currency reform to combat hyperinflation" },
-      { year: 1989, event: "Hyperinflation Crisis", description: "Inflation peaks at over 3000%, economic chaos" },
-      { year: 1991, event: "Convertibility Plan", description: "Currency board system, peso pegged to USD" },
-      { year: 1995, event: "Tequila Crisis", description: "Mexican crisis spillover, banking sector stress" },
-      { year: 1998, event: "Brazilian Devaluation", description: "Regional crisis impact on Argentina" },
-      { year: 2001, event: "Economic Collapse", description: "End of convertibility, sovereign default" },
-      { year: 2002, event: "Peso Devaluation", description: "Currency crisis, banking system collapse" },
-      { year: 2003, event: "Kirchner Presidency", description: "Debt restructuring, economic recovery begins" },
-      { year: 2008, event: "Global Financial Crisis", description: "Commodity price volatility, capital flight" },
-      { year: 2011, event: "Capital Controls", description: "Foreign exchange restrictions implemented" },
-      { year: 2014, event: "Sovereign Default", description: "Second default in 13 years, holdout creditors" },
-      { year: 2015, event: "Macri Administration", description: "Market-friendly policies, gradual adjustment" },
-    { year: 2018, event: "Currency Crisis", description: "Peso devaluation, IMF bailout package" },
-    { year: 2019, event: "Economic Recession", description: "GDP contraction, rising unemployment" },
-    { year: 2020, event: "COVID-19 Pandemic", description: "Lockdowns, -9.9% GDP growth" },
-    { year: 2021, event: "Economic Recovery", description: "Strong rebound with 10.7% growth" },
-      { year: 2022, event: "Debt Restructuring", description: "IMF agreement, fiscal consolidation" },
-      { year: 2023, event: "Hyperinflation Crisis", description: "135% inflation rate peak, political uncertainty" },
-      { year: 2024, event: "Milei Administration", description: "Libertarian policies, dollarization debate" }
-    ];
-  };
-
-  // Filter major events based on selected year range
-  const getMajorEventsForRange = () => {
-    const currentYear = new Date().getFullYear();
-    const startYear = currentYear - selectedYears;
-    const allEvents = getAllMajorEvents();
-    
-    return allEvents.filter(event => event.year >= startYear && event.year < currentYear);
-  };
-
-  // Generate dynamic data
-  const adAsData = generateAdAsData();
+  const adAsData = getFilteredAdAsData();
   const isLmData = generateIsLmData();
   const majorEvents = getMajorEventsForRange();
 
   // Calculate period-specific statistics based on selected year range
   const calculatePeriodStats = () => {
     const currentYear = new Date().getFullYear();
-    const startYear = currentYear - selectedYears;
+    let startYear: number, endYear: number;
+    
+    if (useCustomPeriod) {
+      startYear = getEffectiveStartYear();
+      endYear = getEffectiveEndYear();
+    } else {
+      startYear = currentYear - selectedYears;
+      endYear = currentYear;
+    }
     
     // Filter data for the selected period
-    const periodGdpData = gdpData.filter(item => item.year >= startYear);
-    const periodInflationData = inflationData.filter(item => item.year >= startYear);
+    const periodGdpData = gdpData.filter(item => item.year >= startYear && item.year <= endYear);
+    const periodInflationData = inflationData.filter(item => item.year >= startYear && item.year <= endYear);
     
     // If no data in period, use latest available
     if (periodGdpData.length === 0 && periodInflationData.length === 0) {
@@ -1270,15 +1864,23 @@ const ArgentinaMacroProject = () => {
     }
 
     // Determine whether to show latest or average based on period length
-    const useAverage = selectedYears > 5;
+    const yearSpan = useCustomPeriod ? (endYear - startYear + 1) : selectedYears;
+    const useAverage = yearSpan > 5;
     const totalDataPoints = periodGdpData.length + periodInflationData.length;
+
+    let periodLabel;
+    if (useCustomPeriod) {
+      periodLabel = useAverage ? `${startYear}-${endYear} Average` : `Latest (${startYear}-${endYear})`;
+    } else {
+      periodLabel = useAverage ? `${selectedYears}-Year Average` : `Latest (${startYear}-${currentYear-1})`;
+    }
 
     return {
       gdp: Math.round(useAverage ? avgGdp : latestGdp) || currentStats.gdp,
       inflation: Number((useAverage ? avgInflation : latestInflation).toFixed(1)) || currentStats.inflation,
       unemployment: Number((useAverage ? avgUnemployment : latestUnemployment).toFixed(1)) || currentStats.unemployment,
       moneyMultiplier: Number((useAverage ? avgMoneyMultiplier : latestMoneyMultiplier).toFixed(1)) || currentStats.moneyMultiplier,
-      periodLabel: useAverage ? `${selectedYears}-Year Average` : `Latest (${startYear}-${currentYear-1})`,
+      periodLabel: periodLabel,
       dataPoints: totalDataPoints,
       isAverage: useAverage
     };
@@ -1295,21 +1897,20 @@ const ArgentinaMacroProject = () => {
             <h2 className="text-3xl font-bold mb-2">Argentina Macroeconomic Analysis</h2>
             <p className="text-lg">Real-time analysis of Argentina's economic performance using live data from World Bank and IMF</p>
           </div>
-          <div className="mt-4 md:mt-0">
-            <label className="block text-sm font-medium mb-2">Time Range:</label>
-            <select
-              value={selectedYears}
-              onChange={(e) => setSelectedYears(Number(e.target.value))}
-              className="px-4 py-2 bg-white text-gray-800 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[150px]"
-              disabled={loading}
-            >
-              {yearRangeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          {renderPeriodSelector(
+            useCustomPeriod,
+            setUseCustomPeriod,
+            selectedYears,
+            setSelectedYears,
+            customStartYear,
+            setCustomStartYear,
+            customEndYear,
+            setCustomEndYear,
+            yearRangeOptions,
+            yearOptions,
+            "mt-4 md:mt-0",
+            "block text-sm font-medium mb-2 text-white"
+          )}
         </div>
         {error && (
           <div className="mt-3 p-2 bg-yellow-500 bg-opacity-20 rounded text-sm">
@@ -1335,12 +1936,12 @@ const ArgentinaMacroProject = () => {
                   Showing: {periodStats.periodLabel}
                 </p>
                 <p className="text-xs text-blue-600">
-                  {periodStats.dataPoints} data points • {selectedYears >= 5 ? 'Averages' : 'Latest values'} for {2024 - selectedYears}-2024 period
+                  {periodStats.dataPoints} data points • {periodStats.isAverage ? 'Averages' : 'Latest values'} for {useCustomPeriod ? `${getEffectiveStartYear()}-${getEffectiveEndYear()}` : `${2024 - selectedYears}-2024`} period
                 </p>
               </div>
             </div>
             <div className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
-              {selectedYears} years
+              {useCustomPeriod ? `${getEffectiveYears()} years` : `${selectedYears} years`}
             </div>
           </div>
         </div>
@@ -1418,21 +2019,18 @@ const ArgentinaMacroProject = () => {
       <div className="bg-white p-6 rounded-lg shadow-lg">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
           <h3 className="text-2xl font-bold text-blue-600">Gross Domestic Product (GDP) Analysis</h3>
-          <div className="mt-2 md:mt-0">
-            <label className="block text-sm font-medium text-gray-600 mb-1">Time Range:</label>
-            <select
-              value={selectedYears}
-              onChange={(e) => setSelectedYears(Number(e.target.value))}
-              className="px-3 py-2 bg-white text-gray-800 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm min-w-[140px]"
-              disabled={loading}
-            >
-              {yearRangeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          {renderPeriodSelector(
+            useCustomPeriod,
+            setUseCustomPeriod,
+            selectedYears,
+            setSelectedYears,
+            customStartYear,
+            setCustomStartYear,
+            customEndYear,
+            setCustomEndYear,
+            yearRangeOptions,
+            yearOptions
+          )}
         </div>
         
         <div className="mb-6">
@@ -1442,6 +2040,33 @@ const ArgentinaMacroProject = () => {
             <p className="text-sm text-gray-600 mt-2">
               Where: C = Consumption, I = Investment, G = Government Spending, X = Exports, M = Imports
             </p>
+          </div>
+        </div>
+
+        {/* Data Availability Info */}
+        <div className="mb-6 bg-blue-50 border-l-4 border-blue-400 p-4 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <h5 className="font-semibold text-blue-800 mb-1">Data Availability for Selected Period</h5>
+              <p className="text-sm text-blue-700">
+                {useCustomPeriod ? (
+                  `Custom period: ${getEffectiveStartYear()}-${getEffectiveEndYear()} (${getEffectiveYears()} years)`
+                ) : (
+                  `Last ${selectedYears} years (${new Date().getFullYear() - selectedYears}-${new Date().getFullYear()})`
+                )}
+              </p>
+              <p className="text-xs text-blue-600 mt-1">
+                GDP Data: {gdpData.length > 0 ? `${gdpData.length} data points available` : 'No data available'}
+                {gdpData.length > 0 && ` • Years: ${gdpData[0]?.year}-${gdpData[gdpData.length - 1]?.year}`}
+              </p>
+            </div>
+            <div className="text-right">
+              <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+                gdpData.length > 0 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+              }`}>
+                {gdpData.length > 0 ? '✓ Data Available' : '⚠ Limited Data'}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1566,7 +2191,7 @@ const ArgentinaMacroProject = () => {
           
           <ResponsiveContainer width="100%" height={400}>
             <ComposedChart 
-              data={gdpData.filter(item => item.moneyMultiplier).map(item => ({
+              data={getFilteredGdpData().filter(item => item.moneyMultiplier).map(item => ({
                 year: item.year,
                 moneyMultiplier: item.moneyMultiplier,
                 inflation: parseFloat(item.inflation || '0'),
@@ -1702,21 +2327,18 @@ const ArgentinaMacroProject = () => {
       <div className="bg-white p-6 rounded-lg shadow-lg">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
           <h3 className="text-2xl font-bold text-red-600">Inflation and Unemployment Analysis</h3>
-          <div className="mt-2 md:mt-0">
-            <label className="block text-sm font-medium text-gray-600 mb-1">Time Range:</label>
-            <select
-              value={selectedYears}
-              onChange={(e) => setSelectedYears(Number(e.target.value))}
-              className="px-3 py-2 bg-white text-gray-800 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-red-400 text-sm min-w-[140px]"
-              disabled={loading}
-            >
-              {yearRangeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          {renderPeriodSelector(
+            useCustomPeriod,
+            setUseCustomPeriod,
+            selectedYears,
+            setSelectedYears,
+            customStartYear,
+            setCustomStartYear,
+            customEndYear,
+            setCustomEndYear,
+            yearRangeOptions,
+            yearOptions
+          )}
         </div>
         
         <div className="mb-6">
@@ -1816,20 +2438,18 @@ const ArgentinaMacroProject = () => {
       <div className="bg-white p-6 rounded-lg shadow-lg">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
           <h3 className="text-2xl font-bold text-purple-600">Aggregate Demand & Aggregate Supply</h3>
-          <div className="mt-2 md:mt-0">
-            <label className="block text-sm font-medium text-gray-600 mb-1">Time Range:</label>
-            <select
-              value={selectedYears}
-              onChange={(e) => setSelectedYears(Number(e.target.value))}
-              className="px-3 py-2 bg-white text-gray-800 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-400 text-sm min-w-[140px]"
-            >
-              {yearRangeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          {renderPeriodSelector(
+            useCustomPeriod,
+            setUseCustomPeriod,
+            selectedYears,
+            setSelectedYears,
+            customStartYear,
+            setCustomStartYear,
+            customEndYear,
+            setCustomEndYear,
+            yearRangeOptions,
+            yearOptions
+          )}
         </div>
         
         <div className="grid md:grid-cols-2 gap-6 mb-6">
@@ -1977,24 +2597,28 @@ const ArgentinaMacroProject = () => {
     </div>
   );
 
-  const renderISLM = () => (
+    const renderISLM = () => (
     <div className="space-y-6">
       <div className="bg-white p-6 rounded-lg shadow-lg">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
           <h3 className="text-2xl font-bold text-indigo-600">IS-LM Curves Analysis</h3>
           <div className="mt-2 md:mt-0 flex flex-col md:flex-row gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">View Mode:</label>
-              <select
-                value={isLmViewMode}
-                onChange={(e) => setIsLmViewMode(e.target.value as 'all' | 'single')}
-                className="px-3 py-2 bg-white text-gray-800 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm min-w-[160px]"
-              >
-                <option value="all">Show All Years (Dynamic)</option>
-                <option value="single">Single Year (Traditional)</option>
-              </select>
-            </div>
-            {isLmViewMode === 'single' ? (
+            {/* Hide view mode dropdown when custom period is selected */}
+            {!useCustomPeriod && (
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">View Mode:</label>
+                <select
+                  value={isLmViewMode}
+                  onChange={(e) => setIsLmViewMode(e.target.value as 'all' | 'single' | 'compare')}
+                  className="px-3 py-2 bg-white text-gray-800 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm min-w-[160px]"
+                >
+                  <option value="all">Show All Years (Dynamic)</option>
+                  <option value="single">Single Year (Traditional)</option>
+                  <option value="compare">Compare Two Years</option>
+                </select>
+              </div>
+            )}
+            {isLmViewMode === 'single' && !useCustomPeriod ? (
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1">Select Year:</label>
                 <select
@@ -2002,47 +2626,100 @@ const ArgentinaMacroProject = () => {
                   onChange={(e) => setSelectedIsLmYear(Number(e.target.value))}
                   className="px-3 py-2 bg-white text-gray-800 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm min-w-[100px]"
                 >
-                  {Array.from({ length: 40 }, (_, i) => 2024 - i).map(year => (
+                  {Array.from({ length: 50 }, (_, i) => 2023 - i).filter(year => year !== 2024).map(year => (
                     <option key={year} value={year}>{year}</option>
                   ))}
                 </select>
               </div>
-            ) : (
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">Time Range:</label>
-                <select
-                  value={selectedYears}
-                  onChange={(e) => setSelectedYears(Number(e.target.value))}
-                  className="px-3 py-2 bg-white text-gray-800 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm min-w-[140px]"
-                >
-                  {yearRangeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+            ) : isLmViewMode === 'compare' && !useCustomPeriod ? (
+              <div className="flex gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">First Year:</label>
+                  <select
+                    value={selectedIsLmYear}
+                    onChange={(e) => setSelectedIsLmYear(Number(e.target.value))}
+                    className="px-3 py-2 bg-white text-gray-800 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm min-w-[100px]"
+                  >
+                    {Array.from({ length: 50 }, (_, i) => 2023 - i).filter(year => year !== 2024).map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Second Year:</label>
+                  <select
+                    value={compareIsLmYear}
+                    onChange={(e) => setCompareIsLmYear(Number(e.target.value))}
+                    className="px-3 py-2 bg-white text-gray-800 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm min-w-[100px]"
+                  >
+                    {Array.from({ length: 50 }, (_, i) => 2023 - i).filter(year => year !== 2024).map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
+            ) : (
+              renderPeriodSelector(
+                useCustomPeriod,
+                setUseCustomPeriod,
+                selectedYears,
+                setSelectedYears,
+                customStartYear,
+                setCustomStartYear,
+                customEndYear,
+                setCustomEndYear,
+                yearRangeOptions,
+                yearOptions,
+                "",
+                "block text-sm font-medium text-gray-600 mb-1"
+              )
             )}
           </div>
         </div>
         
                 <div className="bg-blue-50 p-4 rounded-lg mb-6">
           <div className="flex items-center mb-2">
-            <div className={`w-3 h-3 rounded-full mr-2 ${isLmViewMode === 'single' ? 'bg-green-500' : 'bg-blue-500'}`}></div>
+            <div className={`w-3 h-3 rounded-full mr-2 ${isLmViewMode === 'single' && !useCustomPeriod ? 'bg-green-500' : isLmViewMode === 'compare' && !useCustomPeriod ? 'bg-purple-500' : 'bg-blue-500'}`}></div>
             <h4 className="text-lg font-semibold">
-              {isLmViewMode === 'single' 
+              {isLmViewMode === 'single' && !useCustomPeriod
                 ? `Traditional IS-LM Analysis (${selectedIsLmYear})`
-                : `Dynamic IS-LM Path (${2024 - selectedYears + 1}-2024)`
+                : isLmViewMode === 'compare' && !useCustomPeriod
+                  ? `IS-LM Comparison: ${selectedIsLmYear} vs ${compareIsLmYear}`
+                : useCustomPeriod 
+                  ? `Dynamic IS-LM Path (${customStartYear}-${customEndYear})`
+                  : `Dynamic IS-LM Path (${2023 - selectedYears + 1}-2023)`
               }
             </h4>
           </div>
           <p className="text-sm text-gray-700">
-            {isLmViewMode === 'single' 
+            {isLmViewMode === 'single' && !useCustomPeriod
               ? `Shows the equilibrium point for ${selectedIsLmYear} - classic textbook IS-LM with single equilibrium where goods and money markets clear simultaneously.`
-              : `Shows Argentina's economic trajectory through IS-LM space over time. Each point represents one year's equilibrium, revealing how policy changes and external shocks moved the economy.`
+              : isLmViewMode === 'compare' && !useCustomPeriod
+                ? `Compares IS-LM curves between ${selectedIsLmYear} and ${compareIsLmYear}. Shows how economic conditions shifted the curves and moved equilibrium points between these two periods.`
+              : useCustomPeriod
+                ? `Shows Argentina's economic trajectory through IS-LM space for the custom period ${customStartYear}-${customEndYear}. Each point represents one year's equilibrium during this specific timeframe.`
+                : `Shows Argentina's economic trajectory through IS-LM space over time. Each point represents one year's equilibrium, revealing how policy changes and external shocks moved the economy.`
             }
           </p>
         </div>
+        
+        {/* Historical Estimate Notice */}
+        {isLmViewMode === 'single' && (() => {
+          const { equilibrium: eq1 } = generateIsLmCurves(selectedIsLmYear);
+          
+          return eq1?.isHistoricalEstimate ? (
+            <div className="bg-orange-50 p-4 rounded-lg mb-6 border-l-4 border-orange-400">
+              <div className="flex items-center mb-2">
+                <div className="w-3 h-3 rounded-full mr-2 bg-orange-500"></div>
+                <h4 className="text-lg font-semibold text-orange-800">📈 Historical Economic Estimate</h4>
+              </div>
+              <p className="text-sm text-orange-700">
+                Real-time data for {selectedIsLmYear} is not available. This IS-LM analysis uses historical economic estimates based on Argentina's known economic periods and patterns.
+                The curves show representative economic conditions for that era.
+              </p>
+            </div>
+          ) : null;
+        })()}
         
         <div className="grid md:grid-cols-2 gap-6 mb-6">
           <div className="bg-gray-100 p-4 rounded-lg">
@@ -2066,40 +2743,343 @@ const ArgentinaMacroProject = () => {
         </div>
 
         <ResponsiveContainer width="100%" height={450}>
-          {isLmViewMode === 'single' ? (
+          {isLmViewMode === 'all' || useCustomPeriod ? (
+            // Dynamic view - show equilibrium evolution over time
+            (() => {
+              const dynamicData = generateIsLmData();
+              
+              return (
+                <ComposedChart 
+                  data={dynamicData}
+                  margin={{ top: 20, right: 50, left: 20, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis 
+                    dataKey="year" 
+                    tick={{ fontSize: 12 }}
+                    label={{ value: 'Year', position: 'insideBottom', offset: -5 }}
+                  />
+                  <YAxis 
+                    yAxisId="left"
+                    tick={{ fontSize: 12 }}
+                    label={{ value: 'Interest Rate (%)', angle: -90, position: 'insideLeft' }}
+                    domain={[0, 'dataMax + 2']}
+                    tickFormatter={(value) => Math.round(value).toString()}
+                  />
+                  <YAxis 
+                    yAxisId="right"
+                    orientation="right"
+                    tick={{ fontSize: 12 }}
+                    label={{ value: 'Income (Y)', angle: 90, position: 'insideRight' }}
+                    domain={['dataMin - 20', 'dataMax + 20']}
+                    tickFormatter={(value) => Math.round(value).toString()}
+                  />
+                  <Tooltip 
+                    contentStyle={{
+                      backgroundColor: '#fff',
+                      border: '1px solid #ccc',
+                      borderRadius: '8px',
+                      fontSize: '12px'
+                    }}
+                    content={({ active, payload, label }) => {
+                      if (active && payload && payload.length > 0) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
+                            <p className="font-semibold mb-2">Year: {label}</p>
+                            <div className="space-y-1 text-xs">
+                              <p className="flex items-center">
+                                <TrendingUp className="h-3 w-3 mr-1 text-blue-600" />
+                                <span className="text-blue-600">Interest Rate:</span> {data.interestRate}%
+                              </p>
+                              <p className="flex items-center">
+                                <Calculator className="h-3 w-3 mr-1 text-green-600" />
+                                <span className="text-green-600">Income:</span> {data.income}
+                              </p>
+                              <p className="flex items-center">
+                                <span className="text-purple-600">Real Rate:</span> {data.realRate}%
+                              </p>
+                              <hr className="my-1" />
+                              <p className="text-gray-600">Economic Context:</p>
+                              <p className="text-xs">💰 GDP: ${data.realGDP}B</p>
+                              <p className="text-xs">📈 Inflation: {data.inflationRate}%</p>
+                              <p className="text-xs">👥 Unemployment: {data.unemploymentRate}%</p>
+                              <p className="text-xs">📊 Growth: {data.growthRate}%</p>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '12px' }} />
+                  <Line 
+                    yAxisId="left"
+                    type="monotone" 
+                    dataKey="interestRate" 
+                    stroke="#3B82F6" 
+                    strokeWidth={3} 
+                    name="Interest Rate (%)"
+                    dot={{ fill: '#3B82F6', strokeWidth: 2, r: 4 }}
+                  />
+                  <Line 
+                    yAxisId="right"
+                    type="monotone" 
+                    dataKey="income" 
+                    stroke="#10B981" 
+                    strokeWidth={3} 
+                    name="Equilibrium Income"
+                    dot={{ fill: '#10B981', strokeWidth: 2, r: 4 }}
+                  />
+                </ComposedChart>
+              );
+            })()
+          ) : isLmViewMode === 'single' && !useCustomPeriod ? (
             // Single year view - show actual IS and LM curves
             (() => {
-              const { isData, lmData } = generateIsLmCurves(selectedIsLmYear);
-              
-              // Simple combined dataset for both curves
-              const combinedData: any[] = [];
-              
-              // Add all IS curve points
-              isData.forEach(point => {
-                combinedData.push({
-                  income: point.income,
-                  isRate: point.interestRate,
-                  year: selectedIsLmYear
-                });
-              });
-              
-              // Add all LM curve points  
-              lmData.forEach(point => {
-                const existing = combinedData.find(d => d.income === point.income);
-                if (existing) {
-                  existing.lmRate = point.interestRate;
-                } else {
-                  combinedData.push({
-                    income: point.income,
-                    lmRate: point.interestRate,
+              // Single year mode
+              const { isData, lmData, equilibrium } = generateIsLmCurves(selectedIsLmYear);
+                
+                                // Create combined dataset - now both curves have the same income points
+                const combinedData: any[] = isData.map((isPoint, index) => {
+                  const lmPoint = lmData[index]; // Since both arrays have same length and income points
+                  
+                  return {
+                    income: Math.round(isPoint.income),
+                    isRate: Math.round(isPoint.interestRate * 10) / 10,
+                    lmRate: Math.round(lmPoint.interestRate * 10) / 10,
+                    equilibrium: (equilibrium && isPoint.income === equilibrium.income) ? equilibrium.interestRate : null,
                     year: selectedIsLmYear
+                  };
+                });
+                
+                combinedData.sort((a, b) => a.income - b.income);
+                
+                return (
+                  <ComposedChart 
+                    data={combinedData}
+                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis 
+                      dataKey="income" 
+                      tick={{ fontSize: 12 }}
+                      label={{ value: 'Income (Y)', position: 'insideBottom', offset: -5 }}
+                      domain={['dataMin - 20', 'dataMax + 20']}
+                      tickFormatter={(value) => Math.round(value).toString()}
+                    />
+                    <YAxis 
+                      tick={{ fontSize: 12 }}
+                      label={{ value: 'Interest Rate (%)', angle: -90, position: 'insideLeft' }}
+                      domain={[0, (dataMax: number) => Math.min(50, dataMax + 5)]}
+                      tickFormatter={(value) => Math.round(value).toString()}
+                    />
+                    <Tooltip 
+                      contentStyle={{
+                        backgroundColor: '#fff',
+                        border: '1px solid #ccc',
+                        borderRadius: '8px',
+                        fontSize: '12px'
+                      }}
+                      content={({ active, payload, label }) => {
+                        if (active && payload && payload.length > 0) {
+                          return (
+                            <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
+                              <p className="font-semibold mb-2">Income: {Math.round(label)}</p>
+                              <div className="space-y-1 text-xs">
+                                {payload.map((entry: any, index: number) => (
+                                  entry.value && entry.value > 0 && (
+                                    <p key={index} className="flex items-center">
+                                      <Calculator className="h-3 w-3 mr-1" style={{color: entry.color}} />
+                                      <span style={{color: entry.color}}>{entry.name}:</span> {Math.round(entry.value * 10) / 10}{entry.name === 'Equilibrium Point' ? '' : '%'}
+                                    </p>
+                                  )
+                                ))}
+                                <hr className="my-1" />
+                                <p className="text-gray-600">Year: {selectedIsLmYear}</p>
+                                {(() => {
+                                  const { equilibrium } = generateIsLmCurves(selectedIsLmYear);
+                                  return equilibrium?.isHistoricalEstimate ? (
+                                    <p className="text-orange-600 text-xs italic">📈 Historical Estimate</p>
+                                  ) : null;
+                                })()}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: '12px' }} />
+                    <Line 
+                      type="monotone" 
+                      dataKey="isRate" 
+                      stroke="#6366F1" 
+                      strokeWidth={3} 
+                      name="IS Curve"
+                      dot={false}
+                      connectNulls={false}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="lmRate" 
+                      stroke="#EF4444" 
+                      strokeWidth={3} 
+                      name="LM Curve"
+                      dot={false}
+                      connectNulls={false}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="equilibrium" 
+                      stroke="#10B981" 
+                      strokeWidth={0}
+                      name="Equilibrium Point"
+                      dot={{ fill: '#10B981', strokeWidth: 1, r: 2 }}
+                      connectNulls={false}
+                    />
+                  </ComposedChart>
+                );
+            })()
+          ) : isLmViewMode === 'compare' && !useCustomPeriod ? (
+            // Compare two years - show both sets of IS and LM curves
+            (() => {
+                            // Generate curves for both years with extended common range
+              const curves1 = generateIsLmCurves(selectedIsLmYear);
+              const curves2 = generateIsLmCurves(compareIsLmYear);
+              
+              const { equilibrium: eq1 } = curves1;
+              const { equilibrium: eq2 } = curves2;
+              
+              // Create a comprehensive range that covers both equilibriums
+              const eq1Income = eq1 ? eq1.income : 300;
+              const eq2Income = eq2 ? eq2.income : 300;
+              const minIncome = Math.max(100, Math.min(eq1Income, eq2Income) - 300);
+              const maxIncome = Math.min(600, Math.max(eq1Income, eq2Income) + 300);
+              
+              // Generate curves with the same extended range for both years
+              const generateCurvesWithCommonRange = (year: number) => {
+                const yearData = gdpData?.find(d => d.year === year);
+                if (!yearData) return { isData: [], lmData: [] };
+                
+                const gdp = parseFloat(yearData.gdp || '0');
+                const inflation = parseFloat(yearData.inflation || '0');
+                const unemployment = parseFloat(yearData.unemployment || '0');
+                
+                // Same parameters as generateIsLmCurves
+                const baseConsumptionRatio = 0.65;
+                const adjustedMPC = unemployment > 15 ? baseConsumptionRatio * 0.95 : 
+                                   inflation > 50 ? baseConsumptionRatio * 1.05 : baseConsumptionRatio;
+                const taxRate = 0.25;
+                const multiplier = 1 / (1 - adjustedMPC * (1 - taxRate));
+                
+                const autonomousSpending = gdp * 0.3;
+                const investmentSensitivity = inflation > 20 ? 4 : 2;
+                const realMoneySupply = gdp * 0.4 * (1 / Math.max(1, inflation / 10));
+                const moneyDemandIncome = 0.25;
+                const moneyDemandInterest = inflation > 30 ? 8 : 15;
+                
+                const isData: any[] = [];
+                const lmData: any[] = [];
+                
+                for (let income = minIncome; income <= maxIncome; income += 2) {
+                  const isInterestRate = (autonomousSpending - income / multiplier) / investmentSensitivity;
+                  const lmInterestRate = (moneyDemandIncome * income - realMoneySupply) / moneyDemandInterest;
+                  
+                  isData.push({
+                    income: Math.round(income),
+                    interestRate: Math.round(Math.max(0, isInterestRate) * 10) / 10,
+                    curve: 'IS',
+                    year: year
+                  });
+                  
+                  lmData.push({
+                    income: Math.round(income),
+                    interestRate: Math.round(Math.max(0, lmInterestRate) * 10) / 10,
+                    curve: 'LM',
+                    year: year
                   });
                 }
+                
+                return { isData, lmData };
+              };
+              
+              const { isData: isData1, lmData: lmData1 } = generateCurvesWithCommonRange(selectedIsLmYear);
+              const { isData: isData2, lmData: lmData2 } = generateCurvesWithCommonRange(compareIsLmYear);
+              
+              console.log('Common range generation:', {
+                year1: selectedIsLmYear,
+                year2: compareIsLmYear,
+                eq1Income,
+                eq2Income,
+                commonRange: [minIncome, maxIncome],
+                curves1Length: isData1.length,
+                curves2Length: isData2.length
               });
               
-              combinedData.sort((a, b) => a.income - b.income);
+                             // Debug equilibrium values
+               console.log('Comparison Equilibrium Debug:', {
+                 year1: selectedIsLmYear,
+                 eq1: eq1,
+                 year2: compareIsLmYear,
+                 eq2: eq2,
+                 curves1Length: isData1.length,
+                 curves2Length: isData2.length,
+                 sampleIncomes1: isData1.slice(0, 3).map(p => p.income),
+                 sampleIncomes2: isData2.slice(0, 3).map(p => p.income)
+               });
+
+                               // Create a comprehensive income range that includes all points
+                 const allIncomes = new Set<number>();
+                 isData1.forEach(p => allIncomes.add(p.income));
+                 isData2.forEach(p => allIncomes.add(p.income));
+                 if (eq1) allIncomes.add(eq1.income);
+                 if (eq2) allIncomes.add(eq2.income);
+                 
+
               
-                              return (
+                               // Create combined dataset with all income points
+                 const combinedData: any[] = Array.from(allIncomes).sort((a, b) => a - b).map(income => {
+                   // Find corresponding points for each curve
+                   const isPoint1 = isData1.find(p => p.income === income);
+                   const lmPoint1 = lmData1.find(p => p.income === income);
+                   const isPoint2 = isData2.find(p => p.income === income);
+                   const lmPoint2 = lmData2.find(p => p.income === income);
+                   
+
+                
+                                 const dataPoint = {
+                   income: income,
+                   // Year 1 curves
+                   isRate1: isPoint1 ? Math.round(isPoint1.interestRate * 10) / 10 : null,
+                   lmRate1: lmPoint1 ? Math.round(lmPoint1.interestRate * 10) / 10 : null,
+                   // Year 2 curves
+                   isRate2: isPoint2 ? Math.round(isPoint2.interestRate * 10) / 10 : null,
+                   lmRate2: lmPoint2 ? Math.round(lmPoint2.interestRate * 10) / 10 : null,
+                   // Equilibrium points
+                   equilibrium1: (eq1 && income === eq1.income) ? eq1.interestRate : null,
+                   equilibrium2: (eq2 && income === eq2.income) ? eq2.interestRate : null,
+                 };
+                 
+
+                
+                // Debug equilibrium matching
+                if (eq1 && income === eq1.income) {
+                  console.log(`Found ${selectedIsLmYear} equilibrium at income ${income}, rate ${eq1.interestRate}`);
+                }
+                if (eq2 && income === eq2.income) {
+                  console.log(`Found ${compareIsLmYear} equilibrium at income ${income}, rate ${eq2.interestRate}`);
+                }
+                
+                return dataPoint;
+              }).filter(point => 
+                // Only include points that have at least one curve value
+                point.isRate1 !== null || point.lmRate1 !== null || 
+                point.isRate2 !== null || point.lmRate2 !== null ||
+                point.equilibrium1 !== null || point.equilibrium2 !== null
+              );
+              
+              return (
                 <ComposedChart 
                   data={combinedData}
                   margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
@@ -2109,11 +3089,14 @@ const ArgentinaMacroProject = () => {
                     dataKey="income" 
                     tick={{ fontSize: 12 }}
                     label={{ value: 'Income (Y)', position: 'insideBottom', offset: -5 }}
+                    domain={['dataMin - 20', 'dataMax + 20']}
+                    tickFormatter={(value) => Math.round(value).toString()}
                   />
                   <YAxis 
                     tick={{ fontSize: 12 }}
                     label={{ value: 'Interest Rate (%)', angle: -90, position: 'insideLeft' }}
-                    domain={[0, 25]}
+                    domain={[0, (dataMax: number) => Math.min(50, dataMax + 5)]}
+                    tickFormatter={(value) => Math.round(value).toString()}
                   />
                   <Tooltip 
                     contentStyle={{
@@ -2126,18 +3109,26 @@ const ArgentinaMacroProject = () => {
                       if (active && payload && payload.length > 0) {
                         return (
                           <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
-                            <p className="font-semibold mb-2">Income: {label}</p>
+                            <p className="font-semibold mb-2">Income: {Math.round(label)}</p>
                             <div className="space-y-1 text-xs">
-                              {payload.map((entry: any, index: number) => (
+                              <p className="font-medium text-gray-700">{selectedIsLmYear}:</p>
+                              {payload.filter(entry => entry.dataKey?.toString().endsWith('1')).map((entry: any, index: number) => (
                                 entry.value && entry.value > 0 && (
-                                  <p key={index} className="flex items-center">
+                                  <p key={index} className="flex items-center ml-2">
                                     <Calculator className="h-3 w-3 mr-1" style={{color: entry.color}} />
-                                    <span style={{color: entry.color}}>{entry.name}:</span> {entry.value.toFixed(1)}%
+                                    <span style={{color: entry.color}}>{entry.name}:</span> {Math.round(entry.value * 10) / 10}{entry.name.includes('Equilibrium') ? '' : '%'}
                                   </p>
                                 )
                               ))}
-                              <hr className="my-1" />
-                              <p className="text-gray-600">Year: {selectedIsLmYear}</p>
+                              <p className="font-medium text-gray-700 mt-2">{compareIsLmYear}:</p>
+                              {payload.filter(entry => entry.dataKey?.toString().endsWith('2')).map((entry: any, index: number) => (
+                                entry.value && entry.value > 0 && (
+                                  <p key={index} className="flex items-center ml-2">
+                                    <Calculator className="h-3 w-3 mr-1" style={{color: entry.color}} />
+                                    <span style={{color: entry.color}}>{entry.name}:</span> {Math.round(entry.value * 10) / 10}{entry.name.includes('Equilibrium') ? '' : '%'}
+                                  </p>
+                                )
+                              ))}
                             </div>
                           </div>
                         );
@@ -2146,85 +3137,76 @@ const ArgentinaMacroProject = () => {
                     }}
                   />
                   <Legend wrapperStyle={{ fontSize: '12px' }} />
+                  
+                  {/* Year 1 curves - solid lines */}
                   <Line 
                     type="monotone" 
-                    dataKey="isRate" 
+                    dataKey="isRate1" 
                     stroke="#6366F1" 
                     strokeWidth={3} 
-                    name="IS Curve"
+                    name={`IS Curve ${selectedIsLmYear}`}
                     dot={false}
                     connectNulls={false}
                   />
                   <Line 
                     type="monotone" 
-                    dataKey="lmRate" 
+                    dataKey="lmRate1" 
                     stroke="#EF4444" 
                     strokeWidth={3} 
-                    name="LM Curve"
+                    name={`LM Curve ${selectedIsLmYear}`}
                     dot={false}
                     connectNulls={false}
                   />
-
-          </ComposedChart>
+                  
+                  {/* Year 2 curves - dashed lines */}
+                  <Line 
+                    type="monotone" 
+                    dataKey="isRate2" 
+                    stroke="#8B5CF6" 
+                    strokeWidth={3} 
+                    strokeDasharray="5 5"
+                    name={`IS Curve ${compareIsLmYear}`}
+                    dot={false}
+                    connectNulls={false}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="lmRate2" 
+                    stroke="#F59E0B" 
+                    strokeWidth={3} 
+                    strokeDasharray="5 5"
+                    name={`LM Curve ${compareIsLmYear}`}
+                    dot={false}
+                    connectNulls={false}
+                  />
+                  
+                  {/* Equilibrium points */}
+                  <Line 
+                    type="monotone" 
+                    dataKey="equilibrium1" 
+                    stroke="#10B981" 
+                    strokeWidth={0}
+                    name={`Equilibrium ${selectedIsLmYear}`}
+                    dot={{ fill: '#10B981', strokeWidth: 1, r: 3 }}
+                    connectNulls={false}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="equilibrium2" 
+                    stroke="#F97316" 
+                    strokeWidth={0}
+                    name={`Equilibrium ${compareIsLmYear}`}
+                    dot={{ fill: '#F97316', strokeWidth: 1, r: 3 }}
+                    connectNulls={false}
+                  />
+                </ComposedChart>
               );
             })()
           ) : (
-            // Multi-year view - show equilibrium path over time
-            <ComposedChart 
-              data={isLmData} 
-              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis 
-                dataKey="income" 
-                tick={{ fontSize: 12 }}
-                label={{ value: 'Income (Y)', position: 'insideBottom', offset: -5 }}
-              />
-              <YAxis 
-                tick={{ fontSize: 12 }}
-                label={{ value: 'Interest Rate (%)', angle: -90, position: 'insideLeft' }}
-                domain={[(dataMin: number) => Math.min(dataMin - 2, 0), (dataMax: number) => dataMax + 5]}
-              />
-              <Tooltip 
-                contentStyle={{
-                  backgroundColor: '#fff',
-                  border: '1px solid #ccc',
-                  borderRadius: '8px',
-                  fontSize: '12px'
-                }}
-                content={({ active, payload, label }) => {
-                  if (active && payload && payload.length > 0) {
-                    const data = payload[0]?.payload;
-                    return (
-                      <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
-                        <p className="font-semibold mb-2">Year: {data?.year} | Income: {data?.income?.toFixed(1)}</p>
-                        <div className="space-y-1 text-xs">
-                          <p className="flex items-center"><Calculator className="h-3 w-3 mr-1 text-indigo-600" /><span className="text-indigo-600">Interest Rate:</span> {data?.interestRate?.toFixed(1)}%</p>
-                          <p className="flex items-center"><TrendingDown className="h-3 w-3 mr-1 text-blue-600" /><span className="text-blue-600">Real Rate:</span> {data?.realRate?.toFixed(1)}%</p>
-                          <hr className="my-2" />
-                          <p className="font-medium text-gray-700">Economic Context:</p>
-                          <p className="flex items-center"><DollarSign className="h-3 w-3 mr-1 text-blue-600" /><span className="text-blue-600">GDP:</span> ${data?.realGDP?.toFixed(1)}B</p>
-                          <p className="flex items-center"><TrendingUp className="h-3 w-3 mr-1 text-red-600" /><span className="text-red-600">Inflation:</span> {data?.inflationRate?.toFixed(1)}%</p>
-                          <p className="flex items-center"><Users className="h-3 w-3 mr-1 text-gray-600" /><span className="text-gray-600">Unemployment:</span> {data?.unemploymentRate?.toFixed(1)}%</p>
-                          <p className="flex items-center"><Activity className="h-3 w-3 mr-1 text-green-700" /><span className="text-green-700">Growth:</span> {data?.growthRate?.toFixed(1)}%</p>
-                        </div>
-                      </div>
-                    );
-                  }
-                  return null;
-                }}
-              />
-              <Legend wrapperStyle={{ fontSize: '12px' }} />
-              <Line 
-                type="monotone" 
-                dataKey="interestRate" 
-                stroke="#6366F1" 
-                strokeWidth={3} 
-                name="Equilibrium Path (Income vs Interest Rate)"
-                dot={{ fill: '#6366F1', strokeWidth: 2, r: 5 }}
-                activeDot={{ r: 7, stroke: '#6366F1', strokeWidth: 2 }}
-              />
-            </ComposedChart>
+            // Fallback view
+            <div className="flex items-center justify-center h-full text-gray-500">
+              <p>Please select a view mode to display IS-LM analysis.</p>
+            </div>
           )}
         </ResponsiveContainer>
 
@@ -2247,6 +3229,8 @@ const ArgentinaMacroProject = () => {
           </div>
         </div>
 
+
+
         {/* Detailed Step-by-Step Calculation Section */}
         <div className="bg-white p-6 rounded-lg shadow-lg border-l-4 border-yellow-500 mt-8">
           <h3 className="text-2xl font-bold text-yellow-600 mb-6">📊 Complete IS-LM Calculation Breakdown</h3>
@@ -2267,12 +3251,12 @@ const ArgentinaMacroProject = () => {
             const adjustedMPC = unemployment > 15 ? baseConsumptionRatio * 0.95 : 
                                inflation > 50 ? baseConsumptionRatio * 1.05 : baseConsumptionRatio;
             const taxRate = 0.25;
-            const multiplier = 1 / (1 - adjustedMPC * (1 - taxRate));
-            const autonomousSpending = gdp * 0.3;
-            const investmentSensitivity = inflation > 20 ? 4 : 2;
-            const realMoneySupply = gdp * 0.4 * (1 / Math.max(1, inflation / 10));
-            const moneyDemandIncome = 0.25;
-            const moneyDemandInterest = inflation > 30 ? 8 : 15;
+            const multiplier = 2; // Fixed multiplier for visual clarity
+            const autonomousSpending = 120 + (currentYear - 2020) * 10; // Vary A-bar by year for shift
+            const investmentSensitivity = 3; // Fixed b for IS curve
+            const realMoneySupply = 100 + (currentYear - 2020) * 8; // Vary M/P by year for shift
+            const moneyDemandIncome = 0.5; // Fixed k for LM curve
+            const moneyDemandInterest = 2; // Fixed h for LM curve
             
             // Calculate equilibrium
             const numerator = moneyDemandInterest * autonomousSpending + investmentSensitivity * realMoneySupply;
@@ -2551,12 +3535,17 @@ const ArgentinaMacroProject = () => {
                       <p><strong>GDP Data:</strong> World Bank (NY.GDP.MKTP.CD)</p>
                       <p><strong>Inflation:</strong> GDP Deflator (NY.GDP.DEFL.KD.ZG)</p>
                       <p><strong>Unemployment:</strong> World Bank (SL.UEM.TOTL.ZS)</p>
+                      <p><strong>🏦 BCRA Integration:</strong> <span className="text-green-600">✓ Active</span></p>
                     </div>
                     <div>
-                      <p><strong>MPC:</strong> Derived from consumption patterns</p>
-                      <p><strong>Parameters:</strong> Argentina-specific calibration</p>
-                      <p><strong>Updates:</strong> Real-time API integration</p>
+                      <p><strong>Money Supply:</strong> BCRA M2/M3 (when available)</p>
+                      <p><strong>Interest Rates:</strong> BCRA Policy Rate (LELIQ)</p>
+                      <p><strong>Exchange Rate:</strong> BCRA USD/ARS</p>
+                      <p><strong>Reserves:</strong> BCRA International Reserves</p>
                     </div>
+                  </div>
+                  <div className="mt-3 text-xs text-blue-600 border-t border-blue-200 pt-2">
+                    <strong>Enhanced IS-LM Analysis:</strong> Real-time BCRA monetary data improves money multiplier calculations and provides authentic Central Bank interest rates. When BCRA data is available, it takes precedence over World Bank estimates for monetary variables.
                   </div>
                 </div>
 
@@ -2587,7 +3576,7 @@ const ArgentinaMacroProject = () => {
               }}
             />
             <h3 className="text-xl font-bold text-gray-800 mb-4">Abhyunnati Singh</h3>
-            <p className="text-gray-600 text-sm">Specializes in macroeconomic analysis and policy research. Focuses on understanding complex economic relationships and their real-world applications in emerging markets.</p>
+            <p className="text-gray-600 text-sm">Handles AD-AS and IS-LM data analysis. Works with aggregate demand and supply models to understand price levels and output. Processes IS-LM curve data to analyze the relationship between interest rates and economic activity.</p>
           </div>
         </div>
 
@@ -2602,7 +3591,7 @@ const ArgentinaMacroProject = () => {
               }}
             />
             <h3 className="text-xl font-bold text-gray-800 mb-4">Alpesh Chaudhari</h3>
-            <p className="text-gray-600 text-sm">Expert in econometric modeling and statistical analysis. Passionate about translating complex economic data into meaningful insights for policy makers.</p>
+            <p className="text-gray-600 text-sm">Studies Argentina's 2001 economic crisis. Analyzes the peso devaluation and banking system collapse. Looks at how the crisis affected different sectors of the economy and the recovery process that followed.</p>
           </div>
         </div>
 
@@ -2617,7 +3606,7 @@ const ArgentinaMacroProject = () => {
               }}
             />
             <h3 className="text-xl font-bold text-gray-800 mb-4">Gaurav Gaur</h3>
-            <p className="text-gray-600 text-sm">Focuses on GDP analysis and economic growth patterns. Dedicated to understanding the dynamics of economic development in Latin American countries.</p>
+            <p className="text-gray-600 text-sm">Focuses on Argentina's 1989 hyperinflation crisis. Studies the period when inflation reached over 3000% annually. Analyzes the causes of hyperinflation and its effects on the economy and society.</p>
           </div>
         </div>
 
@@ -2632,7 +3621,7 @@ const ArgentinaMacroProject = () => {
               }}
             />
             <h3 className="text-xl font-bold text-gray-800 mb-4">Kshirodra Meher</h3>
-            <p className="text-gray-600 text-sm">Research specialist in inflation dynamics and monetary policy. Committed to analyzing the impact of economic policies on developing economies.</p>
+            <p className="text-gray-600 text-sm">Handles GDP and inflation data processing. Works with World Bank and IMF data to analyze economic trends. Manages the overall data collection and analysis for the project's economic indicators.</p>
           </div>
         </div>
 
@@ -2646,8 +3635,8 @@ const ArgentinaMacroProject = () => {
                 e.currentTarget.src = "/images/placeholder.jpg";
               }}
             />
-            <h3 className="text-xl font-bold text-gray-800 mb-4">Samiksha</h3>
-            <p className="text-gray-600 text-sm">Analyst specializing in financial markets and currency dynamics. Passionate about understanding the complexities of international trade and exchange rates.</p>
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Shamiksha</h3>
+            <p className="text-gray-600 text-sm">Studies Argentina's 2018 currency crisis. Analyzes the peso devaluation and IMF bailout package. Examines how the crisis affected Argentina's economy and the government's response to the financial emergency.</p>
           </div>
         </div>
 
@@ -2662,7 +3651,7 @@ const ArgentinaMacroProject = () => {
               }}
             />
             <h3 className="text-xl font-bold text-gray-800 mb-4">Sohan</h3>
-            <p className="text-gray-600 text-sm">Expert in labor market economics and unemployment analysis. Dedicated to studying employment trends and their socioeconomic implications.</p>
+            <p className="text-gray-600 text-sm">Focuses on Argentina's 2018 crisis. Studies how the financial crisis affected employment and unemployment rates. Analyzes the social and economic impacts of the currency devaluation on working families.</p>
           </div>
         </div>
 
@@ -2676,8 +3665,8 @@ const ArgentinaMacroProject = () => {
                 e.currentTarget.src = "/images/placeholder.jpg";
               }}
             />
-            <h3 className="text-xl font-bold text-gray-800 mb-4">Vamsi</h3>
-            <p className="text-gray-600 text-sm">Research coordinator specializing in fiscal policy and government spending analysis. Focuses on the relationship between public policy and economic outcomes.</p>
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Vamshi</h3>
+            <p className="text-gray-600 text-sm">Focuses on Argentina's 2001 economic crisis. Studies the collapse of the convertibility system and its impact on the economy. Analyzes how the crisis affected GDP, inflation, and unemployment during this critical period.</p>
           </div>
         </div>
 
@@ -2692,7 +3681,7 @@ const ArgentinaMacroProject = () => {
               }}
             />
             <h3 className="text-xl font-bold text-gray-800 mb-4">Zuveria</h3>
-            <p className="text-gray-600 text-sm">International trade economist focusing on Argentina's export-import relationships. Passionate about analyzing global economic interconnections and trade policies.</p>
+            <p className="text-gray-600 text-sm">Specializes in policy recommendations based on economic events. Analyzes Argentina's major economic crises and suggests policy solutions. Focuses on what lessons can be learned from past events to improve future economic outcomes.</p>
           </div>
         </div>
       </div>
@@ -2777,7 +3766,7 @@ const ArgentinaMacroProject = () => {
             <div className="font-mono bg-white p-3 rounded border">
               <p><strong>M/P = L(i,Y)</strong></p>
               <p className="text-sm mt-2">Money demand: L(i,Y) = kY - hi</p>
-              <p className="text-sm mt-1">Solved for i: i = (1/h)(kY - M/P)</p>
+              <p className="text-sm mt-1">Solved for i: <strong>i = (1/h)(kY - M/P)</strong></p>
             </div>
           </div>
 
@@ -2848,21 +3837,20 @@ const ArgentinaMacroProject = () => {
             <h2 className="text-3xl font-bold mb-2">Human Development Analysis</h2>
             <p className="text-lg">Argentina's social development progress and its correlation with economic crises</p>
           </div>
-          <div className="mt-4 md:mt-0">
-            <label className="block text-sm font-medium mb-2">HDI Time Range:</label>
-            <select
-              value={selectedHDIYears}
-              onChange={(e) => setSelectedHDIYears(Number(e.target.value))}
-              className="px-4 py-2 bg-white text-gray-800 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-400 min-w-[180px]"
-              disabled={hdiLoading}
-            >
-              {hdiYearRangeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          {renderPeriodSelector(
+            useCustomHDIPeriod,
+            setUseCustomHDIPeriod,
+            selectedHDIYears,
+            setSelectedHDIYears,
+            customHDIStartYear,
+            setCustomHDIStartYear,
+            customHDIEndYear,
+            setCustomHDIEndYear,
+            hdiYearRangeOptions,
+            yearOptions,
+            "mt-4 md:mt-0",
+            "block text-sm font-medium mb-2 text-white"
+          )}
         </div>
       </div>
 
@@ -3522,11 +4510,453 @@ const ArgentinaMacroProject = () => {
     </div>
   );
 
+  const renderExchangeRate = () => (
+    <div className="space-y-6">
+      <div className="bg-white p-6 rounded-lg shadow-lg">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
+          <h3 className="text-2xl font-bold text-green-600">Exchange Rate & Monetary Analysis</h3>
+          {renderPeriodSelector(
+            useCustomPeriod,
+            setUseCustomPeriod,
+            selectedYears,
+            setSelectedYears,
+            customStartYear,
+            setCustomStartYear,
+            customEndYear,
+            setCustomEndYear,
+            yearRangeOptions,
+            yearOptions
+          )}
+        </div>
+        
+        <div className="mb-6">
+          <h4 className="text-lg font-semibold mb-2">Key Exchange Rate Relationships:</h4>
+          <div className="bg-gray-100 p-4 rounded-lg font-mono text-sm">
+            <p><strong>Real Exchange Rate = (Nominal Rate × Foreign Price) / Domestic Price</strong></p>
+            <p><strong>Purchasing Power Parity: S = (P_domestic / P_foreign)</strong></p>
+            <p><strong>Interest Rate Parity: (1 + i_domestic) = (S_forward / S_spot) × (1 + i_foreign)</strong></p>
+            <p className="text-xs text-gray-600 mt-2">
+              Where: S = Exchange Rate, P = Price Level, i = Interest Rate
+            </p>
+          </div>
+        </div>
+
+        {/* Exchange Rate Analysis */}
+        <div className="mb-8">
+          <h4 className="text-xl font-bold text-green-600 mb-4">Exchange Rate Dynamics</h4>
+          <ResponsiveContainer width="100%" height={400}>
+            <ComposedChart 
+              data={getFilteredGdpData().filter(item => item.exchangeRate || item.realExchangeRate).map(item => ({
+                year: item.year,
+                nominalRate: item.exchangeRate,
+                realRate: item.realExchangeRate,
+                inflation: parseFloat(item.inflation || '0'),
+                currentAccount: item.currentAccount,
+                foreignReserves: item.foreignReserves
+              }))} 
+              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis 
+                dataKey="year" 
+                tick={{ fontSize: 12 }}
+                interval={0}
+                angle={-45}
+                textAnchor="end"
+                height={60}
+              />
+              <YAxis 
+                yAxisId="left" 
+                orientation="left"
+                tick={{ fontSize: 12 }}
+                label={{ value: 'Exchange Rate (ARS/USD)', angle: -90, position: 'insideLeft' }}
+                domain={[0, 'dataMax + 100']}
+              />
+              <YAxis 
+                yAxisId="right" 
+                orientation="right"
+                tick={{ fontSize: 12 }}
+                label={{ value: 'Real Exchange Rate Index', angle: 90, position: 'insideRight' }}
+                domain={[50, 150]}
+              />
+              <Tooltip 
+                contentStyle={{
+                  backgroundColor: '#fff',
+                  border: '1px solid #ccc',
+                  borderRadius: '8px',
+                  fontSize: '12px'
+                }}
+                content={({ active, payload, label }) => {
+                  if (active && payload && payload.length > 0) {
+                    const data = payload[0]?.payload;
+                    return (
+                      <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
+                        <p className="font-semibold mb-2">Year: {label}</p>
+                        <div className="space-y-1 text-xs">
+                          <p className="flex items-center"><DollarSign className="h-3 w-3 mr-1 text-green-600" /><span className="text-green-600">Nominal Rate:</span> {data?.nominalRate?.toFixed(2)} ARS/USD</p>
+                          <p className="flex items-center"><TrendingUp className="h-3 w-3 mr-1 text-blue-600" /><span className="text-blue-600">Real Rate Index:</span> {data?.realRate?.toFixed(1)}</p>
+                          <p className="flex items-center"><Activity className="h-3 w-3 mr-1 text-red-600" /><span className="text-red-600">Inflation:</span> {data?.inflation?.toFixed(1)}%</p>
+                          <p className="flex items-center"><Globe className="h-3 w-3 mr-1 text-purple-600" /><span className="text-purple-600">Current Account:</span> {data?.currentAccount?.toFixed(1)}% of GDP</p>
+                          <p className="flex items-center"><Factory className="h-3 w-3 mr-1 text-orange-600" /><span className="text-orange-600">Reserves:</span> ${data?.foreignReserves?.toFixed(1)}B</p>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: '12px' }} />
+              <Line 
+                yAxisId="left" 
+                type="monotone" 
+                dataKey="nominalRate" 
+                stroke="#10B981" 
+                strokeWidth={3} 
+                name="Nominal Exchange Rate (ARS/USD)"
+                dot={{ fill: '#10B981', strokeWidth: 2, r: 4 }}
+                activeDot={{ r: 6, stroke: '#10B981', strokeWidth: 2 }}
+                connectNulls={false}
+              />
+              <Line 
+                yAxisId="right" 
+                type="monotone" 
+                dataKey="realRate" 
+                stroke="#3B82F6" 
+                strokeWidth={3} 
+                name="Real Exchange Rate Index"
+                dot={{ fill: '#3B82F6', strokeWidth: 2, r: 4 }}
+                activeDot={{ r: 6, stroke: '#3B82F6', strokeWidth: 2 }}
+                connectNulls={false}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+
+          <div className="mt-6 grid md:grid-cols-2 gap-4">
+            <div className="bg-green-50 p-4 rounded-lg">
+              <h5 className="font-semibold text-green-800">Exchange Rate Analysis:</h5>
+              <ul className="text-sm text-green-700 mt-2 space-y-1">
+                <li>• <strong>Nominal Rate:</strong> Market exchange rate (ARS per USD)</li>
+                <li>• <strong>Real Rate:</strong> Inflation-adjusted competitiveness measure</li>
+                <li>• <strong>Devaluation Cycles:</strong> Periodic sharp adjustments</li>
+                <li>• <strong>Capital Controls:</strong> Multiple exchange rate system</li>
+                <li>• <strong>Dollarization:</strong> High USD demand in economy</li>
+              </ul>
+            </div>
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h5 className="font-semibold text-blue-800">Key Economic Relationships:</h5>
+              <ul className="text-sm text-blue-700 mt-2 space-y-1">
+                <li>• Devaluation → Inflation transmission (pass-through effect)</li>
+                <li>• Current account deficit → Pressure on reserves</li>
+                <li>• High inflation → Real appreciation → Competitiveness loss</li>
+                <li>• Political uncertainty → Capital flight → Devaluation</li>
+                <li>• IMF programs → Exchange rate adjustment conditions</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Monetary Policy & Interest Rates */}
+        <div className="mb-8">
+          <h4 className="text-xl font-bold text-purple-600 mb-4">Monetary Policy & Interest Rates</h4>
+          <ResponsiveContainer width="100%" height={400}>
+            <ComposedChart 
+              data={getFilteredGdpData().filter(item => item.interestRate || item.lendingRate).map(item => ({
+                year: item.year,
+                realInterestRate: item.interestRate,
+                lendingRate: item.lendingRate,
+                inflation: parseFloat(item.inflation || '0'),
+                moneyMultiplier: item.moneyMultiplier
+              }))} 
+              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis 
+                dataKey="year" 
+                tick={{ fontSize: 12 }}
+                interval={0}
+                angle={-45}
+                textAnchor="end"
+                height={60}
+              />
+              <YAxis 
+                yAxisId="left" 
+                orientation="left"
+                tick={{ fontSize: 12 }}
+                label={{ value: 'Interest Rates (%)', angle: -90, position: 'insideLeft' }}
+                domain={['dataMin - 5', 'dataMax + 5']}
+              />
+              <YAxis 
+                yAxisId="right" 
+                orientation="right"
+                tick={{ fontSize: 12 }}
+                label={{ value: 'Money Multiplier (x)', angle: 90, position: 'insideRight' }}
+                domain={[1, 5]}
+              />
+              <Tooltip 
+                contentStyle={{
+                  backgroundColor: '#fff',
+                  border: '1px solid #ccc',
+                  borderRadius: '8px',
+                  fontSize: '12px'
+                }}
+                content={({ active, payload, label }) => {
+                  if (active && payload && payload.length > 0) {
+                    const data = payload[0]?.payload;
+                    return (
+                      <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
+                        <p className="font-semibold mb-2">Year: {label}</p>
+                        <div className="space-y-1 text-xs">
+                          <p className="flex items-center"><Calculator className="h-3 w-3 mr-1 text-purple-600" /><span className="text-purple-600">Real Interest Rate:</span> {data?.realInterestRate?.toFixed(1)}%</p>
+                          <p className="flex items-center"><TrendingUp className="h-3 w-3 mr-1 text-orange-600" /><span className="text-orange-600">Lending Rate:</span> {data?.lendingRate?.toFixed(1)}%</p>
+                          <p className="flex items-center"><Activity className="h-3 w-3 mr-1 text-red-600" /><span className="text-red-600">Inflation:</span> {data?.inflation?.toFixed(1)}%</p>
+                          <p className="flex items-center"><BarChart3 className="h-3 w-3 mr-1 text-blue-600" /><span className="text-blue-600">Money Multiplier:</span> {data?.moneyMultiplier?.toFixed(1)}x</p>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: '12px' }} />
+              <Line 
+                yAxisId="left" 
+                type="monotone" 
+                dataKey="realInterestRate" 
+                stroke="#8B5CF6" 
+                strokeWidth={3} 
+                name="Real Interest Rate (%)"
+                dot={{ fill: '#8B5CF6', strokeWidth: 2, r: 4 }}
+                activeDot={{ r: 6, stroke: '#8B5CF6', strokeWidth: 2 }}
+                connectNulls={false}
+              />
+              <Line 
+                yAxisId="left" 
+                type="monotone" 
+                dataKey="lendingRate" 
+                stroke="#F59E0B" 
+                strokeWidth={3} 
+                name="Lending Rate (%)"
+                dot={{ fill: '#F59E0B', strokeWidth: 2, r: 4 }}
+                activeDot={{ r: 6, stroke: '#F59E0B', strokeWidth: 2 }}
+                connectNulls={false}
+              />
+              <Bar 
+                yAxisId="right" 
+                dataKey="moneyMultiplier" 
+                fill="#3B82F6" 
+                name="Money Multiplier"
+                opacity={0.6}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+
+          <div className="mt-6 grid md:grid-cols-2 gap-4">
+            <div className="bg-purple-50 p-4 rounded-lg">
+              <h5 className="font-semibold text-purple-800">Monetary Policy Challenges:</h5>
+              <ul className="text-sm text-purple-700 mt-2 space-y-1">
+                <li>• <strong>Negative Real Rates:</strong> Interest rates below inflation</li>
+                <li>• <strong>Fiscal Dominance:</strong> Central bank financing government</li>
+                <li>• <strong>Credibility Crisis:</strong> Lack of trust in monetary policy</li>
+                <li>• <strong>Currency Substitution:</strong> Preference for USD over pesos</li>
+                <li>• <strong>Capital Flight:</strong> Outflows during uncertainty periods</li>
+              </ul>
+            </div>
+            <div className="bg-orange-50 p-4 rounded-lg">
+              <h5 className="font-semibold text-orange-800">Money Supply Dynamics:</h5>
+              <ul className="text-sm text-orange-700 mt-2 space-y-1">
+                <li>• Money multiplier varies with economic conditions</li>
+                <li>• High inflation reduces multiplier effectiveness</li>
+                <li>• Banking system stress affects credit creation</li>
+                <li>• Reserve requirements used as policy tool</li>
+                <li>• Quasi-fiscal operations distort monetary transmission</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Balance of Payments & Capital Flows */}
+        <div className="mb-8">
+          <h4 className="text-xl font-bold text-teal-600 mb-4">Balance of Payments & Capital Flows</h4>
+          <ResponsiveContainer width="100%" height={400}>
+            <ComposedChart 
+              data={getFilteredGdpData().filter(item => item.currentAccount || item.capitalFlows || item.foreignReserves).map(item => ({
+                year: item.year,
+                currentAccount: item.currentAccount,
+                capitalFlows: item.capitalFlows,
+                foreignReserves: item.foreignReserves,
+                exchangeRate: item.exchangeRate
+              }))} 
+              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis 
+                dataKey="year" 
+                tick={{ fontSize: 12 }}
+                interval={0}
+                angle={-45}
+                textAnchor="end"
+                height={60}
+              />
+              <YAxis 
+                yAxisId="left" 
+                orientation="left"
+                tick={{ fontSize: 12 }}
+                label={{ value: 'Current Account (% GDP)', angle: -90, position: 'insideLeft' }}
+                domain={['dataMin - 2', 'dataMax + 2']}
+              />
+              <YAxis 
+                yAxisId="right" 
+                orientation="right"
+                tick={{ fontSize: 12 }}
+                label={{ value: 'Reserves (Billion USD)', angle: 90, position: 'insideRight' }}
+                domain={[0, 'dataMax + 10']}
+              />
+              <Tooltip 
+                contentStyle={{
+                  backgroundColor: '#fff',
+                  border: '1px solid #ccc',
+                  borderRadius: '8px',
+                  fontSize: '12px'
+                }}
+                content={({ active, payload, label }) => {
+                  if (active && payload && payload.length > 0) {
+                    const data = payload[0]?.payload;
+                    return (
+                      <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
+                        <p className="font-semibold mb-2">Year: {label}</p>
+                        <div className="space-y-1 text-xs">
+                          <p className="flex items-center"><Globe className="h-3 w-3 mr-1 text-teal-600" /><span className="text-teal-600">Current Account:</span> {data?.currentAccount?.toFixed(1)}% of GDP</p>
+                          <p className="flex items-center"><TrendingUp className="h-3 w-3 mr-1 text-blue-600" /><span className="text-blue-600">Capital Flows:</span> {data?.capitalFlows?.toFixed(1)}% of GDP</p>
+                          <p className="flex items-center"><Factory className="h-3 w-3 mr-1 text-green-600" /><span className="text-green-600">Foreign Reserves:</span> ${data?.foreignReserves?.toFixed(1)}B</p>
+                          <p className="flex items-center"><DollarSign className="h-3 w-3 mr-1 text-orange-600" /><span className="text-orange-600">Exchange Rate:</span> {data?.exchangeRate?.toFixed(2)} ARS/USD</p>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: '12px' }} />
+              <Bar 
+                yAxisId="left" 
+                dataKey="currentAccount" 
+                fill="#14B8A6" 
+                name="Current Account (% GDP)"
+                opacity={0.7}
+              />
+              <Line 
+                yAxisId="left" 
+                type="monotone" 
+                dataKey="capitalFlows" 
+                stroke="#3B82F6" 
+                strokeWidth={3} 
+                name="Capital Flows (% GDP)"
+                dot={{ fill: '#3B82F6', strokeWidth: 2, r: 4 }}
+                activeDot={{ r: 6, stroke: '#3B82F6', strokeWidth: 2 }}
+                connectNulls={false}
+              />
+              <Line 
+                yAxisId="right" 
+                type="monotone" 
+                dataKey="foreignReserves" 
+                stroke="#10B981" 
+                strokeWidth={3} 
+                name="Foreign Reserves (Billion USD)"
+                dot={{ fill: '#10B981', strokeWidth: 2, r: 4 }}
+                activeDot={{ r: 6, stroke: '#10B981', strokeWidth: 2 }}
+                connectNulls={false}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+
+          <div className="mt-6 grid md:grid-cols-2 gap-4">
+            <div className="bg-teal-50 p-4 rounded-lg">
+              <h5 className="font-semibold text-teal-800">Balance of Payments Dynamics:</h5>
+              <ul className="text-sm text-teal-700 mt-2 space-y-1">
+                <li>• <strong>Current Account:</strong> Trade balance + net income flows</li>
+                <li>• <strong>Capital Account:</strong> FDI + portfolio investment + debt flows</li>
+                <li>• <strong>Reserve Changes:</strong> Central bank intervention in FX markets</li>
+                <li>• <strong>External Financing:</strong> Dependence on capital inflows</li>
+                <li>• <strong>Stop-Start Cycles:</strong> Sudden stops in capital flows</li>
+              </ul>
+            </div>
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h5 className="font-semibold text-blue-800">Policy Implications:</h5>
+              <ul className="text-sm text-blue-700 mt-2 space-y-1">
+                <li>• Current account deficits require financing</li>
+                <li>• Capital flight during crises depletes reserves</li>
+                <li>• IMF programs provide external financing</li>
+                <li>• Capital controls limit outflows but distort markets</li>
+                <li>• Competitiveness crucial for export performance</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Macroeconomic Conclusions */}
+        <div className="bg-gradient-to-r from-blue-50 to-green-50 p-6 rounded-lg">
+          <h4 className="text-xl font-bold text-gray-800 mb-4">Key Macroeconomic Conclusions</h4>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div>
+              <h5 className="font-bold text-blue-800 mb-2">Exchange Rate - Inflation Nexus</h5>
+              <ul className="text-sm space-y-1">
+                <li>• <strong>High Pass-Through:</strong> Devaluations quickly translate to inflation</li>
+                <li>• <strong>Real Appreciation:</strong> High inflation erodes competitiveness</li>
+                <li>• <strong>Devaluation Cycles:</strong> Periodic large adjustments to restore equilibrium</li>
+                <li>• <strong>Dollarization Pressure:</strong> Currency instability drives USD demand</li>
+              </ul>
+            </div>
+            <div>
+              <h5 className="font-bold text-green-800 mb-2">Monetary-Fiscal Interactions</h5>
+              <ul className="text-sm space-y-1">
+                <li>• <strong>Fiscal Dominance:</strong> Government financing needs drive money creation</li>
+                <li>• <strong>Inflation Tax:</strong> Seigniorage as implicit government revenue</li>
+                <li>• <strong>Credibility Gap:</strong> Lack of central bank independence undermines policy</li>
+                <li>• <strong>External Constraints:</strong> BOP crises force policy adjustments</li>
+              </ul>
+            </div>
+          </div>
+          
+          <div className="mt-6 bg-yellow-100 p-4 rounded-lg">
+            <h5 className="font-bold text-yellow-800 mb-2">Policy Recommendations</h5>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div>
+                <p className="font-semibold text-yellow-700">Exchange Rate Policy</p>
+                <ul className="text-xs space-y-1 mt-1">
+                  <li>• Managed float with intervention</li>
+                  <li>• Gradual removal of capital controls</li>
+                  <li>• Build adequate reserve buffers</li>
+                </ul>
+              </div>
+              <div>
+                <p className="font-semibold text-yellow-700">Monetary Policy</p>
+                <ul className="text-xs space-y-1 mt-1">
+                  <li>• Central bank independence</li>
+                  <li>• Inflation targeting framework</li>
+                  <li>• Positive real interest rates</li>
+                </ul>
+              </div>
+              <div>
+                <p className="font-semibold text-yellow-700">Structural Reforms</p>
+                <ul className="text-xs space-y-1 mt-1">
+                  <li>• Fiscal consolidation</li>
+                  <li>• Financial market development</li>
+                  <li>• Export diversification</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const sections = [
     { id: 'team', name: 'Our Team', icon: Users },
     { id: 'overview', name: 'Overview', icon: Activity },
     { id: 'gdp', name: 'GDP Analysis', icon: TrendingUp },
     { id: 'inflation', name: 'Inflation & Unemployment', icon: TrendingDown },
+    { id: 'exchange', name: 'Exchange Rate & Monetary', icon: DollarSign },
     { id: 'adas', name: 'AD-AS Model', icon: Activity },
     { id: 'islm', name: 'IS-LM Curves', icon: Calculator },
     { id: 'policy', name: 'Policy Analysis', icon: AlertTriangle },
@@ -3564,6 +4994,7 @@ const ArgentinaMacroProject = () => {
           {activeSection === 'overview' && renderOverview()}
           {activeSection === 'gdp' && renderGDP()}
           {activeSection === 'inflation' && renderInflation()}
+          {activeSection === 'exchange' && renderExchangeRate()}
           {activeSection === 'hdi' && renderHDI()}
           {activeSection === 'adas' && renderADAS()}
           {activeSection === 'islm' && renderISLM()}
