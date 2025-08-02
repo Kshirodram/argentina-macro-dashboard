@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, Bar, Scatter } from 'recharts';
 import { TrendingUp, TrendingDown, DollarSign, Users, Activity, Calculator, Loader, AlertTriangle, Heart, Home, Factory, Building, Globe, BarChart3, Info, Target, CheckCircle } from 'lucide-react';
 import ReactDOM from 'react-dom/client';
@@ -16,8 +16,9 @@ const ArgentinaMacroProject = () => {
   const [selectedHDIYears, setSelectedHDIYears] = useState(40); // Default to 40 years for HDI
   const [isLmViewMode, setIsLmViewMode] = useState<'all' | 'single' | 'compare'>('all');
   const [selectedIsLmYear, setSelectedIsLmYear] = useState<number>(2023);
-  const [enableIsLmComparison, setEnableIsLmComparison] = useState<boolean>(false);
+
   const [compareIsLmYear, setCompareIsLmYear] = useState<number>(2020);
+
   
   // Custom period selection state
   const [useCustomPeriod, setUseCustomPeriod] = useState(false);
@@ -1458,11 +1459,36 @@ const ArgentinaMacroProject = () => {
       
       // Historical economic estimates for Argentina based on known periods
       if (selectedYear >= 2010) {
-        // Recent period - use latest available data
-        const latestData = gdpData[gdpData.length - 1] || { gdp: '630', inflation: '50', unemployment: '8' };
-        gdp = parseFloat(latestData.gdp || '630');
-        inflation = parseFloat(latestData.inflation || '50');
-        unemployment = parseFloat(latestData.unemployment || '8');
+        // Recent period - use year-specific estimates based on Argentina's economic history
+        if (selectedYear >= 2020) {
+          // COVID and post-COVID period
+          const latestData = gdpData[gdpData.length - 1] || { gdp: '630', inflation: '50', unemployment: '8' };
+          gdp = parseFloat(latestData.gdp || '630');
+          inflation = parseFloat(latestData.inflation || '50');
+          unemployment = parseFloat(latestData.unemployment || '8');
+        } else if (selectedYear >= 2018) {
+          // Currency crisis period (2018-2019)
+          gdp = selectedYear === 2018 ? 520 : 450; // Sharp contraction in 2019
+          inflation = selectedYear === 2018 ? 47 : 54; // Rising inflation
+          unemployment = selectedYear === 2018 ? 9.2 : 10.6; // Rising unemployment
+        } else if (selectedYear >= 2015) {
+          // Macri administration period (2015-2017)
+          const baseGdp = 630; // 2015 baseline
+          const yearOffset = selectedYear - 2015;
+          gdp = baseGdp - (yearOffset * 30); // Gradual economic decline
+          inflation = selectedYear === 2015 ? 27 : selectedYear === 2016 ? 40 : 25; // 2016 spike, then control
+          unemployment = 6.5 + (yearOffset * 1.2); // Rising unemployment
+        } else if (selectedYear >= 2012) {
+          // Late Kirchner period (2012-2014)
+          gdp = 550 + (selectedYear - 2012) * 20; // Moderate growth
+          inflation = 25 + (selectedYear - 2012) * 5; // Rising inflation
+          unemployment = 7.2 + (selectedYear - 2012) * 0.3; // Stable unemployment
+        } else {
+          // Early 2010s recovery period (2010-2011)
+          gdp = 420 + (selectedYear - 2010) * 50; // Strong recovery growth
+          inflation = 22 + (selectedYear - 2010) * 3; // Moderate inflation
+          unemployment = 7.7 - (selectedYear - 2010) * 0.5; // Declining unemployment
+        }
       } else if (selectedYear >= 2002) {
         // Post-convertibility period (2002-2009): Recovery and growth
         const baseGdp = 200; // Starting low after 2001 crisis
@@ -2868,12 +2894,12 @@ const ArgentinaMacroProject = () => {
                       domain={['dataMin - 20', 'dataMax + 20']}
                       tickFormatter={(value) => Math.round(value).toString()}
                     />
-                    <YAxis 
-                      tick={{ fontSize: 12 }}
-                      label={{ value: 'Interest Rate (%)', angle: -90, position: 'insideLeft' }}
-                      domain={[0, (dataMax: number) => Math.min(50, dataMax + 5)]}
-                      tickFormatter={(value) => Math.round(value).toString()}
-                    />
+                                                    <YAxis 
+                  tick={{ fontSize: 12 }}
+                  label={{ value: 'Interest Rate (%)', angle: -90, position: 'insideLeft' }}
+                  domain={[0, (dataMax: number) => Math.min(50, dataMax + 5)]}
+                  tickFormatter={(value) => Math.round(value).toString()}
+                />
                     <Tooltip 
                       contentStyle={{
                         backgroundColor: '#fff',
@@ -2959,20 +2985,41 @@ const ArgentinaMacroProject = () => {
               
               // Generate curves with the same extended range for both years
               const generateCurvesWithCommonRange = (year: number) => {
-                const yearData = gdpData?.find(d => d.year === year);
-                if (!yearData) return { isData: [], lmData: [] };
+                // Use historical estimates for missing years (same logic as generateIsLmCurves)
+                let yearData = gdpData?.find(d => d.year === year);
+                let gdp, inflation, unemployment;
                 
-                const gdp = parseFloat(yearData.gdp || '0');
-                const inflation = parseFloat(yearData.inflation || '0');
-                const unemployment = parseFloat(yearData.unemployment || '0');
+                if (yearData) {
+                  gdp = parseFloat(yearData.gdp || '0');
+                  inflation = parseFloat(yearData.inflation || '0');
+                  unemployment = parseFloat(yearData.unemployment || '0');
+                } else {
+                  // Use same historical estimation logic as generateIsLmCurves
+                  if (year >= 2018) {
+                    gdp = year === 2018 ? 520 : 450;
+                    inflation = year === 2018 ? 47 : 54;
+                    unemployment = year === 2018 ? 9.2 : 10.6;
+                  } else if (year >= 2015) {
+                    const baseGdp = 630;
+                    const yearOffset = year - 2015;
+                    gdp = baseGdp - (yearOffset * 30);
+                    inflation = year === 2015 ? 27 : year === 2016 ? 40 : 25;
+                    unemployment = 6.5 + (yearOffset * 1.2);
+                  } else {
+                    gdp = 400; // Fallback
+                    inflation = 25;
+                    unemployment = 8;
+                  }
+                }
                 
-                // Same parameters as generateIsLmCurves
+                // Same parameters as generateIsLmCurves - use realistic parameters
                 const baseConsumptionRatio = 0.65;
                 const adjustedMPC = unemployment > 15 ? baseConsumptionRatio * 0.95 : 
                                    inflation > 50 ? baseConsumptionRatio * 1.05 : baseConsumptionRatio;
                 const taxRate = 0.25;
                 const multiplier = 1 / (1 - adjustedMPC * (1 - taxRate));
                 
+                // Same parameters as generateIsLmCurves
                 const autonomousSpending = gdp * 0.3;
                 const investmentSensitivity = inflation > 20 ? 4 : 2;
                 const realMoneySupply = gdp * 0.4 * (1 / Math.max(1, inflation / 10));
@@ -3635,7 +3682,7 @@ const ArgentinaMacroProject = () => {
                 e.currentTarget.src = "/images/placeholder.jpg";
               }}
             />
-            <h3 className="text-xl font-bold text-gray-800 mb-4">Shamiksha</h3>
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Samiksha Bhatnagar</h3>
             <p className="text-gray-600 text-sm">Studies Argentina's 2018 currency crisis. Analyzes the peso devaluation and IMF bailout package. Examines how the crisis affected Argentina's economy and the government's response to the financial emergency.</p>
           </div>
         </div>
@@ -3650,7 +3697,7 @@ const ArgentinaMacroProject = () => {
                 e.currentTarget.src = "/images/placeholder.jpg";
               }}
             />
-            <h3 className="text-xl font-bold text-gray-800 mb-4">Sohan</h3>
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Sohan Mullick</h3>
             <p className="text-gray-600 text-sm">Focuses on Argentina's 2018 crisis. Studies how the financial crisis affected employment and unemployment rates. Analyzes the social and economic impacts of the currency devaluation on working families.</p>
           </div>
         </div>
@@ -3665,7 +3712,7 @@ const ArgentinaMacroProject = () => {
                 e.currentTarget.src = "/images/placeholder.jpg";
               }}
             />
-            <h3 className="text-xl font-bold text-gray-800 mb-4">Vamshi</h3>
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Aravelli Vamsi Krishna</h3>
             <p className="text-gray-600 text-sm">Focuses on Argentina's 2001 economic crisis. Studies the collapse of the convertibility system and its impact on the economy. Analyzes how the crisis affected GDP, inflation, and unemployment during this critical period.</p>
           </div>
         </div>
@@ -3680,7 +3727,7 @@ const ArgentinaMacroProject = () => {
                 e.currentTarget.src = "/images/placeholder.jpg";
               }}
             />
-            <h3 className="text-xl font-bold text-gray-800 mb-4">Zuveria</h3>
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Zuveria Firdouz</h3>
             <p className="text-gray-600 text-sm">Specializes in policy recommendations based on economic events. Analyzes Argentina's major economic crises and suggests policy solutions. Focuses on what lessons can be learned from past events to improve future economic outcomes.</p>
           </div>
         </div>
@@ -4160,6 +4207,440 @@ const ArgentinaMacroProject = () => {
       <div className="bg-gradient-to-r from-red-600 to-orange-600 text-white p-6 rounded-lg">
         <h2 className="text-3xl font-bold mb-2">Policy Crisis Analysis</h2>
         <p className="text-lg">Comprehensive analysis of Argentina's major economic crises and policy responses</p>
+      </div>
+
+      {/* PDF Viewer Section */}
+      <div className="bg-white p-6 rounded-lg shadow-lg border-l-4 border-green-500">
+        <h3 className="text-2xl font-bold text-green-600 mb-6">📄 Presentation Document</h3>
+        <p className="text-gray-700 mb-4">
+          View the complete presentation document below. You can navigate through the slides, zoom in/out, and download the PDF if needed.
+        </p>
+        
+        <div className="bg-gray-100 p-4 rounded-lg">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="text-lg font-semibold text-gray-800">Argentina Economic Crisis Analysis - Full Presentation</h4>
+            <div className="flex space-x-4">
+              <a 
+                href="/content/presentation.pdf" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200"
+              >
+                Open in New Tab
+              </a>
+              <a 
+                href="/content/presentation.pdf" 
+                download="Argentina_Economic_Crisis_Analysis.pdf"
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200"
+              >
+                Download PDF
+              </a>
+            </div>
+          </div>
+          
+          <div className="w-full h-screen max-h-[800px] border border-gray-300 rounded-lg overflow-hidden bg-gray-50">
+            {/* Enhanced PDF Viewer with better browser support */}
+            <div className="w-full h-full flex flex-col">
+              {/* PDF Loading Message */}
+              <div className="text-center p-4 bg-blue-50 border-b border-blue-200">
+                <p className="text-sm text-blue-700">
+                  📄 Loading PDF presentation... If it doesn't appear, try the buttons above to open in a new tab or download.
+                </p>
+              </div>
+              
+              {/* PDF Viewer Container */}
+              <div className="flex-1 relative">
+                {/* Method 1: Object tag (most compatible) */}
+                <object
+                  data="/content/presentation.pdf#toolbar=1&navpanes=1&scrollbar=1&page=1&view=FitH"
+                  type="application/pdf"
+                  className="w-full h-full"
+                  style={{ minHeight: '500px' }}
+                >
+                  {/* Method 2: Embed tag fallback */}
+                  <embed
+                    src="/content/presentation.pdf#toolbar=1&navpanes=1&scrollbar=1&page=1&view=FitH"
+                    type="application/pdf"
+                    className="w-full h-full"
+                    style={{ minHeight: '500px' }}
+                  />
+                  
+                  {/* Method 3: Final fallback with iframe */}
+                  <iframe
+                    src="/content/presentation.pdf#toolbar=1&navpanes=1&scrollbar=1&page=1&view=FitH"
+                    title="Argentina Economic Crisis Analysis Presentation"
+                    className="w-full h-full"
+                    style={{ minHeight: '500px' }}
+                  >
+                    {/* Last resort: Manual options */}
+                    <div className="text-gray-600 p-8 text-center flex flex-col items-center justify-center h-full">
+                      <div className="bg-white p-6 rounded-lg shadow-lg max-w-md">
+                        <h5 className="text-lg font-semibold text-gray-800 mb-4">📄 PDF Viewer Unavailable</h5>
+                        <p className="text-sm text-gray-600 mb-4">
+                          Your browser cannot display PDFs inline. Please use the buttons above to view the presentation.
+                        </p>
+                        <div className="space-y-3">
+                          <a 
+                            href="/content/presentation.pdf" 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="block w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 text-center"
+                          >
+                            🔗 Open in New Tab
+                          </a>
+                          <a 
+                            href="/content/presentation.pdf" 
+                            download="Argentina_Economic_Crisis_Analysis.pdf"
+                            className="block w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 text-center"
+                          >
+                            ⬇️ Download PDF
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  </iframe>
+                </object>
+              </div>
+            </div>
+          </div>
+          
+          <div className="mt-4 text-sm text-gray-600">
+            <p><strong>Note:</strong> If the PDF doesn't display properly, you can:</p>
+            <ul className="list-disc list-inside mt-2 space-y-1">
+              <li>Click "Open in New Tab" to view it in a separate window</li>
+              <li>Right-click the link above and select "Save As" to download</li>
+              <li>Ensure your browser supports PDF viewing</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* Presentation Content Section */}
+      <div className="bg-white p-6 rounded-lg shadow-lg border-l-4 border-blue-500">
+        <h3 className="text-2xl font-bold text-blue-600 mb-6">Argentina Economic Crisis: A Comprehensive Analysis</h3>
+        <p className="text-gray-700 mb-6">
+          A detailed analysis of Argentina's economic challenges, policy responses, and recommendations for sustainable development.
+        </p>
+        
+                {/* Section 1: Economic Crisis Overview */}
+        <div className="mb-8 p-6 bg-blue-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-blue-800 mb-4">📊 Economic Crisis Overview</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              Argentina has experienced recurring economic crises that have shaped its development trajectory and challenged its socioeconomic stability.
+            </p>
+            <div>
+              <h5 className="font-semibold text-blue-700 mb-2">Key Focus Areas:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li>Historical context of Argentina's economic instability</li>
+                <li>Analysis of recurring crisis patterns</li>
+                <li>Impact on socioeconomic indicators</li>
+                <li>International comparisons and lessons</li>
+                <li>Policy recommendations for sustainable growth</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 2: Historical Context */}
+        <div className="mb-8 p-6 bg-green-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-green-800 mb-4">📚 Historical Economic Patterns</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              Argentina's economic history demonstrates a pattern of recurring volatility that has persisted for nearly a century.
+            </p>
+            <div>
+              <h5 className="font-semibold text-green-700 mb-2">Argentina's Economic Volatility:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li>Cyclical boom-bust patterns since 1930s</li>
+                <li>Recurring currency and debt crises</li>
+                <li>Political instability affecting economic policy</li>
+                <li>Resource curse despite natural wealth</li>
+                <li>Chronic inflation and monetary instability</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 3: Economic Indicators */}
+        <div className="mb-8 p-6 bg-purple-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-purple-800 mb-4">📊 Key Economic Indicators</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              Argentina's economic performance is characterized by high volatility across multiple key indicators.
+            </p>
+            <div>
+              <h5 className="font-semibold text-purple-700 mb-2">Critical Metrics:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li>GDP growth volatility and trends</li>
+                <li>Inflation dynamics and hyperinflation episodes</li>
+                <li>Exchange rate instability</li>
+                <li>Unemployment and poverty rates</li>
+                <li>External debt and fiscal deficits</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 4: Crisis Timeline */}
+        <div className="mb-8 p-6 bg-red-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-red-800 mb-4">⏰ Major Crisis Timeline</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              Argentina's economic history is marked by several major crisis events that have shaped its current challenges.
+            </p>
+            <div>
+              <h5 className="font-semibold text-red-700 mb-2">Key Crisis Events:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li><strong>1989-1991:</strong> Hyperinflation Crisis</li>
+                <li><strong>2001-2002:</strong> Economic Collapse & Devaluation</li>
+                <li><strong>2008-2009:</strong> Global Financial Crisis Impact</li>
+                <li><strong>2018-2019:</strong> Currency Crisis & IMF Program</li>
+                <li><strong>2020-2024:</strong> COVID-19 and Recovery Challenges</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 5: Policy Response Analysis */}
+        <div className="mb-8 p-6 bg-yellow-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-yellow-800 mb-4">🏛️ Policy Response Patterns</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              Argentina's crisis responses have followed predictable patterns, often with limited long-term success.
+            </p>
+            <div>
+              <h5 className="font-semibold text-yellow-700 mb-2">Common Policy Responses:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li>Currency controls and capital restrictions</li>
+                <li>Price controls and subsidies</li>
+                <li>Monetary expansion and fiscal stimulus</li>
+                <li>External debt restructuring</li>
+                <li>IMF programs and structural adjustments</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 6: Structural Issues */}
+        <div className="mb-8 p-6 bg-indigo-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-indigo-800 mb-4">⚙️ Structural Economic Problems</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              Deep-rooted structural issues continue to undermine Argentina's economic stability.
+            </p>
+            <div>
+              <h5 className="font-semibold text-indigo-700 mb-2">Root Causes:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li>Weak institutional framework</li>
+                <li>Fiscal dominance and monetization</li>
+                <li>Export dependence on commodities</li>
+                <li>Labor market rigidities</li>
+                <li>Political economy constraints</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 7: International Comparisons */}
+        <div className="mb-8 p-6 bg-teal-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-teal-800 mb-4">🌍 International Perspective</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              Comparative analysis reveals both challenges and opportunities for Argentina.
+            </p>
+            <div>
+              <h5 className="font-semibold text-teal-700 mb-2">Comparative Analysis:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li>Argentina vs. other emerging markets</li>
+                <li>Latin American regional patterns</li>
+                <li>Success stories: Chile, Brazil, Colombia</li>
+                <li>Lessons from other crisis countries</li>
+                <li>Best practices in economic stabilization</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 8: Social Impact */}
+        <div className="mb-8 p-6 bg-pink-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-pink-800 mb-4">👥 Social and Economic Impact</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              Economic crises have profound consequences for human development and social welfare.
+            </p>
+            <div>
+              <h5 className="font-semibold text-pink-700 mb-2">Human Development Consequences:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li>Poverty and inequality trends</li>
+                <li>Education and health outcomes</li>
+                <li>Employment and labor market effects</li>
+                <li>Migration and demographic changes</li>
+                <li>Social cohesion and political stability</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 9: Current Challenges */}
+        <div className="mb-8 p-6 bg-orange-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-orange-800 mb-4">🔥 Contemporary Challenges (2024)</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              Argentina faces a complex set of economic challenges in the current period.
+            </p>
+            <div>
+              <h5 className="font-semibold text-orange-700 mb-2">Current Economic Situation:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li>High inflation and currency instability</li>
+                <li>Fiscal deficit and debt sustainability</li>
+                <li>External sector vulnerabilities</li>
+                <li>Political transition and policy uncertainty</li>
+                <li>Post-pandemic recovery challenges</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 10: Reform Proposals */}
+        <div className="mb-8 p-6 bg-cyan-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-cyan-800 mb-4">💡 Proposed Economic Reforms</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              Comprehensive reform agenda addressing key structural and macroeconomic challenges.
+            </p>
+            <div>
+              <h5 className="font-semibold text-cyan-700 mb-2">Reform Agenda:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li>Fiscal consolidation and tax reform</li>
+                <li>Monetary policy framework modernization</li>
+                <li>Exchange rate and capital account liberalization</li>
+                <li>Structural reforms in labor and product markets</li>
+                <li>Institutional strengthening and governance</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 11: Implementation Strategy */}
+        <div className="mb-8 p-6 bg-lime-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-lime-800 mb-4">📋 Implementation Strategy</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              A strategic approach is essential for successful economic reform implementation.
+            </p>
+            <div>
+              <h5 className="font-semibold text-lime-700 mb-2">Strategic Approach:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li>Phased implementation timeline</li>
+                <li>Political consensus building</li>
+                <li>International cooperation and support</li>
+                <li>Monitoring and evaluation framework</li>
+                <li>Risk management and contingency planning</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 12: Expected Outcomes */}
+        <div className="mb-8 p-6 bg-emerald-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-emerald-800 mb-4">📈 Expected Outcomes</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              Successful reforms are expected to deliver significant economic and social benefits.
+            </p>
+            <div>
+              <h5 className="font-semibold text-emerald-700 mb-2">Projected Results:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li>Macroeconomic stability and growth</li>
+                <li>Inflation control and price stability</li>
+                <li>Improved fiscal and external balances</li>
+                <li>Enhanced competitiveness and productivity</li>
+                <li>Sustainable development and poverty reduction</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 13: Risk Assessment */}
+        <div className="mb-8 p-6 bg-rose-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-rose-800 mb-4">⚠️ Risk Assessment</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              Several risks could undermine the success of economic reforms.
+            </p>
+            <div>
+              <h5 className="font-semibold text-rose-700 mb-2">Implementation Risks:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li>Political resistance and policy reversals</li>
+                <li>External shocks and global volatility</li>
+                <li>Social unrest and adjustment costs</li>
+                <li>Technical capacity and institutional weaknesses</li>
+                <li>Market confidence and credibility challenges</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 14: Monitoring Framework */}
+        <div className="mb-8 p-6 bg-violet-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-violet-800 mb-4">📊 Monitoring and Evaluation</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              Effective monitoring is crucial for ensuring reform success and making necessary adjustments.
+            </p>
+            <div>
+              <h5 className="font-semibold text-violet-700 mb-2">Performance Indicators:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li>Macroeconomic stability metrics</li>
+                <li>Fiscal and monetary policy effectiveness</li>
+                <li>Structural reform progress indicators</li>
+                <li>Social impact and poverty measures</li>
+                <li>International competitiveness rankings</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 15: Recommendations */}
+        <div className="mb-8 p-6 bg-amber-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-amber-800 mb-4">💼 Key Recommendations</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              Priority actions are needed to address Argentina's economic challenges effectively.
+            </p>
+            <div>
+              <h5 className="font-semibold text-amber-700 mb-2">Priority Actions:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li>Immediate macroeconomic stabilization</li>
+                <li>Comprehensive structural reform program</li>
+                <li>Institutional capacity building</li>
+                <li>International cooperation and support</li>
+                <li>Long-term sustainable development strategy</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 16: Conclusion */}
+        <div className="mb-8 p-6 bg-slate-50 rounded-lg">
+          <h4 className="text-2xl font-bold text-slate-800 mb-4">🎯 Conclusion</h4>
+          <div className="space-y-4">
+            <p className="text-gray-700 text-lg leading-relaxed">
+              Argentina's path to economic stability requires comprehensive, sustained effort across multiple dimensions.
+            </p>
+            <div>
+              <h5 className="font-semibold text-slate-700 mb-2">Final Thoughts:</h5>
+              <ul className="list-disc list-inside space-y-2 text-gray-700">
+                <li>Argentina's economic challenges require comprehensive solutions</li>
+                <li>Historical patterns must be broken through institutional reforms</li>
+                <li>International cooperation is essential for success</li>
+                <li>Political consensus and social support are crucial</li>
+                <li>Long-term vision and consistent implementation needed</li>
+              </ul>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Three Major Crises Analysis */}
